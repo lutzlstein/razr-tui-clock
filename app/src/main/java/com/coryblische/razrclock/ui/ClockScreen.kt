@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -42,14 +43,15 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.coryblische.razrclock.data.ClockFaceState
+import com.coryblische.razrclock.data.CoverHoles
 import com.coryblische.razrclock.data.LensPair
 import com.coryblische.razrclock.data.accessibleClockLabel
 import com.coryblische.razrclock.data.formatDate
 import com.coryblische.razrclock.data.formatDayPeriod
 import com.coryblische.razrclock.data.formatHoursMinutes
 import com.coryblische.razrclock.data.formatSeconds
-import com.coryblische.razrclock.data.formatSysmon
-import com.coryblische.razrclock.data.formatWeatherLine
+import com.coryblische.razrclock.data.formatRate
+import com.coryblische.razrclock.data.formatTemperature
 import com.coryblische.razrclock.display.CoverGeometry
 import com.coryblische.razrclock.posture.BatteryStatus
 import com.coryblische.razrclock.posture.label
@@ -76,6 +78,7 @@ fun ClockScreen(
     state: ClockFaceState,
     modifier: Modifier = Modifier,
     calibrating: Boolean = false,
+    showLensGuides: Boolean = false,
     onLongPress: () -> Unit = {},
     onLenses: (LensPair) -> Unit = {},
     onCalibrationDone: () -> Unit = {},
@@ -108,8 +111,11 @@ fun ClockScreen(
                 .drawBehind {
                     val a = lenses.place(0, size.width, size.height)
                     val b = lenses.place(1, size.width, size.height)
-                    drawMazeRings(a, fast, colors, emphasized = calibrating && selected == 0)
-                    drawMazeRings(b, slow, colors, emphasized = calibrating && selected == 1)
+                    drawMazeRings(a, b, fast, colors, emphasized = calibrating && selected == 0)
+                    drawMazeRings(b, a, slow, colors, emphasized = calibrating && selected == 1)
+                    if (showLensGuides) {
+                        drawLensGuides(palette)
+                    }
                     if (calibrating) {
                         val mark = if (selected == 0) a else b
                         drawCircle(palette.brightForeground, radius = 5f, center = mark.center)
@@ -138,21 +144,15 @@ fun ClockScreen(
                 },
         ) {
             if (!calibrating) {
-                Text(
-                    text = formatSysmon(state.downBytesPerSec, state.upBytesPerSec, ramPercent = null),
-                    style = terminalTextStyle(mono, 24.sp, palette.foreground, FontWeight.Bold),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                StatusStrip(state)
             }
             if (state.preferences.showDate) {
                 Text(
                     text = formatDate(state),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 10.dp),
-                    style = terminalTextStyle(mono, 28.sp, palette.lightForeground, FontWeight.Bold),
+                        .padding(top = 18.dp, bottom = 4.dp),
+                    style = terminalTextStyle(mono, 26.sp, palette.lightForeground, FontWeight.Bold),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                 )
@@ -165,39 +165,48 @@ fun ClockScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     TimeBlock(state)
-                    WeatherRow(state)
+                    WeatherBlock(state)
                 }
             }
             if (!cover) {
-                StatusColumn(state, Modifier.padding(top = 12.dp, bottom = 8.dp))
+                Text(
+                    text = hingeText(state) + if (state.standActive) "  stand" else "",
+                    modifier = Modifier.padding(top = 16.dp),
+                    style = terminalTextStyle(
+                        mono,
+                        20.sp,
+                        if (state.standActive) palette.brightMagenta else palette.foreground,
+                        FontWeight.Bold,
+                    ),
+                    maxLines = 1,
+                )
             }
         }
         if (cover) {
             val iconTop = CoverIconRow.TOP * sy
             val iconBottom = CoverIconRow.BOTTOM * sy
-            val columnRight = CoverIconRow.RIGHT * sx - 16f
-            Box(
-                Modifier.placeAbs(
-                    left = 20f * sx,
-                    top = iconTop - 168f * sy,
-                    width = (columnRight - 20f * sx).coerceAtLeast(40f),
-                    height = 160f * sy,
+            val columnRight = CoverIconRow.RIGHT * sx - 12f
+            val left = 22f * sx
+            val width = (columnRight - left).coerceAtLeast(40f)
+            Text(
+                text = hingeText(state),
+                modifier = Modifier.pinAbove(iconTop - 10f * sy, left, width),
+                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+                maxLines = 1,
+                softWrap = false,
+            )
+            Text(
+                text = if (state.standActive) "stand" else state.posture.label(),
+                modifier = Modifier.pinBelow(iconBottom + 10f * sy, left, width),
+                style = terminalTextStyle(
+                    mono,
+                    22.sp,
+                    if (state.standActive) palette.brightMagenta else palette.foreground,
+                    FontWeight.Bold,
                 ),
-                contentAlignment = Alignment.BottomStart,
-            ) {
-                StatusColumn(state, hingeLine = false)
-            }
-            Box(
-                Modifier.placeAbs(
-                    left = 20f * sx,
-                    top = iconBottom + 8f * sy,
-                    width = (columnRight - 20f * sx).coerceAtLeast(40f),
-                    height = (heightPx - iconBottom - 14f * sy).coerceAtLeast(20f),
-                ),
-                contentAlignment = Alignment.TopStart,
-            ) {
-                StatusColumn(state, batteryLines = false)
-            }
+                maxLines = 1,
+                softWrap = false,
+            )
         }
         if (calibrating) {
             Box(
@@ -231,13 +240,52 @@ fun ClockScreen(
     }
 }
 
-private fun Modifier.placeAbs(left: Float, top: Float, width: Float, height: Float): Modifier = layout { measurable, _ ->
-    val w = width.roundToInt().coerceAtLeast(1)
-    val h = height.roundToInt().coerceAtLeast(1)
-    val placeable = measurable.measure(Constraints.fixed(w, h))
-    layout(w, h) {
-        placeable.place(left.roundToInt(), top.roundToInt())
+private fun Modifier.pinAbove(bottomPx: Float, leftPx: Float, maxWidthPx: Float): Modifier = layout { measurable, constraints ->
+    val maxW = maxWidthPx.roundToInt().coerceIn(1, constraints.maxWidth)
+    val placeable = measurable.measure(Constraints(maxWidth = maxW))
+    val top = (bottomPx - placeable.height).roundToInt().coerceAtLeast(0)
+    layout(constraints.maxWidth, constraints.maxHeight) {
+        placeable.place(leftPx.roundToInt(), top)
     }
+}
+
+private fun Modifier.pinBelow(topPx: Float, leftPx: Float, maxWidthPx: Float): Modifier = layout { measurable, constraints ->
+    val maxW = maxWidthPx.roundToInt().coerceIn(1, constraints.maxWidth)
+    val placeable = measurable.measure(Constraints(maxWidth = maxW))
+    layout(constraints.maxWidth, constraints.maxHeight) {
+        placeable.place(leftPx.roundToInt(), topPx.roundToInt())
+    }
+}
+
+private fun hingeText(state: ClockFaceState): String {
+    val angle = state.hingeAngleDegrees?.roundToInt()
+    return if (angle != null) "hinge $angle°" else state.posture.label()
+}
+
+private fun DrawScope.drawLensGuides(palette: com.coryblische.razrclock.theme.OmarchyPalette) {
+    val sx = size.width / LensPair.REFERENCE_WIDTH
+    val sy = size.height / LensPair.REFERENCE_HEIGHT
+    val left = CoverHoles.CUTOUT_LEFT * sx
+    val top = CoverHoles.CUTOUT_TOP * sy
+    val right = (CoverHoles.CUTOUT_LEFT + CoverHoles.CUTOUT_WIDTH) * sx
+    val bottom = (CoverHoles.CUTOUT_TOP + CoverHoles.CUTOUT_HEIGHT) * sy
+    drawRect(
+        color = palette.brightCyan,
+        topLeft = Offset(left, top),
+        size = Size(right - left, bottom - top),
+        style = Stroke(width = 2f),
+    )
+    fun hole(h: CoverHoles.Hole, color: Color) {
+        drawCircle(
+            color = color,
+            radius = h.radius * ((sx + sy) / 2f),
+            center = Offset(h.x * sx, h.y * sy),
+            style = Stroke(width = 2.5f),
+        )
+    }
+    hole(CoverHoles.lensL, palette.brightYellow)
+    hole(CoverHoles.lensR, palette.brightYellow)
+    hole(CoverHoles.flash, palette.darkForeground)
 }
 
 @Composable
@@ -265,7 +313,7 @@ private fun CalibrationBar(
             CalButton("2", selected == 1, Modifier.weight(1f)) { onSelect(1) }
             CalButton("−", false, Modifier.weight(1f)) { onRadius(-4f) }
             CalButton("+", false, Modifier.weight(1f)) { onRadius(4f) }
-            CalButton("reset", false, Modifier.weight(1.4f)) { onReset() }
+            CalButton("defaults", false, Modifier.weight(1.6f)) { onReset() }
             CalButton("done", false, Modifier.weight(1.4f)) { onDone() }
         }
         Text(
@@ -349,28 +397,80 @@ private fun colorizedDigits(
 }
 
 @Composable
-private fun WeatherRow(state: ClockFaceState) {
+private fun StatusStrip(state: ClockFaceState) {
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    val style = terminalTextStyle(mono, 18.sp, palette.darkForeground, FontWeight.Bold)
+    val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
+    val charging = state.batteryStatus == BatteryStatus.CHARGING || state.batteryStatus == BatteryStatus.FULL
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("↓ ${formatRate(state.downBytesPerSec)}", style = style, maxLines = 1)
+        Text("↑ ${formatRate(state.upBytesPerSec)}", style = style, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(percent, style = style, maxLines = 1)
+            if (charging) {
+                Box(
+                    Modifier
+                        .padding(start = 4.dp)
+                        .size(14.dp)
+                        .drawBehind {
+                            val bolt = palette.brightGreen
+                            drawLine(bolt, Offset(size.width * 0.55f, 0f), Offset(size.width * 0.28f, size.height * 0.52f), 2.4f)
+                            drawLine(bolt, Offset(size.width * 0.28f, size.height * 0.52f), Offset(size.width * 0.62f, size.height * 0.52f), 2.4f)
+                            drawLine(bolt, Offset(size.width * 0.62f, size.height * 0.52f), Offset(size.width * 0.38f, size.height), 2.4f)
+                        },
+                )
+            }
+        }
+        state.ramPercent?.let { ram ->
+            Text("ram $ram%", style = style, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun WeatherBlock(state: ClockFaceState) {
     val palette = LocalPalette.current
     val mono = LocalMono.current
     val weather = state.weather
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+    val fahrenheit = state.preferences.useFahrenheit
+    Column(
+        Modifier.padding(top = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        WeatherGlyph(weather?.code, Modifier.padding(end = 8.dp).size(28.dp))
+        if (weather == null) {
+            Text(
+                text = "weather --",
+                style = terminalTextStyle(mono, 28.sp, palette.foreground, FontWeight.Bold),
+            )
+            return
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            WeatherGlyph(weather.code, Modifier.padding(end = 10.dp).size(36.dp))
+            Text(
+                text = formatTemperature(weather.tempC, fahrenheit),
+                style = terminalTextStyle(mono, 34.sp, palette.brightForeground, FontWeight.Bold),
+            )
+            Text(
+                text = "  ${weather.condition()}",
+                style = terminalTextStyle(mono, 28.sp, palette.lightForeground, FontWeight.Bold),
+            )
+        }
+        val high = formatTemperature(weather.highC, fahrenheit).substringBefore("°")
+        val low = formatTemperature(weather.lowC, fahrenheit).substringBefore("°")
         Text(
-            text = weather?.let { formatWeatherLine(it, state.preferences.useFahrenheit) } ?: "weather --",
-            style = terminalTextStyle(
-                mono,
-                22.sp,
-                if (weather?.stale == true) palette.brightYellow else palette.foreground,
-                FontWeight.Bold,
-            ),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            text = buildAnnotatedString {
+                withStyle(SpanStyle(color = palette.darkForeground)) { append("H $high    L $low") }
+                if (weather.stale) {
+                    withStyle(SpanStyle(color = palette.brightYellow)) { append("   stale") }
+                }
+            },
+            modifier = Modifier.padding(top = 2.dp),
+            style = terminalTextStyle(mono, 16.sp, palette.darkForeground, FontWeight.Bold),
         )
     }
 }
@@ -394,66 +494,6 @@ private fun WeatherGlyph(code: Int?, modifier: Modifier = Modifier) {
             }
         },
     )
-}
-
-@Composable
-private fun StatusColumn(
-    state: ClockFaceState,
-    modifier: Modifier = Modifier,
-    batteryLines: Boolean = true,
-    hingeLine: Boolean = true,
-) {
-    val palette = LocalPalette.current
-    val mono = LocalMono.current
-    Column(modifier) {
-        if (batteryLines && state.preferences.showBattery) {
-            val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
-            val charging = when (state.batteryStatus) {
-                BatteryStatus.CHARGING -> "charging"
-                BatteryStatus.FULL -> "full"
-                BatteryStatus.DISCHARGING -> "discharging"
-                BatteryStatus.UNKNOWN -> "unknown"
-            }
-            val chargingColor = when (state.batteryStatus) {
-                BatteryStatus.CHARGING, BatteryStatus.FULL -> palette.brightGreen
-                else -> palette.foreground
-            }
-            Text(
-                text = "bat  $percent",
-                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
-                maxLines = 1,
-            )
-            Text(
-                text = charging,
-                style = terminalTextStyle(mono, 22.sp, chargingColor, FontWeight.Bold),
-                maxLines = 1,
-            )
-            state.ramPercent?.let { ram ->
-                Text(
-                    text = "ram  $ram%",
-                    style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
-                    maxLines = 1,
-                )
-            }
-        }
-        if (hingeLine) {
-            val angle = state.hingeAngleDegrees?.roundToInt()
-            val hinge = if (angle != null) "hinge $angle°" else state.posture.label()
-            Text(
-                text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = palette.foreground)) { append(hinge) }
-                    if (state.standActive) {
-                        withStyle(SpanStyle(color = palette.brightMagenta)) { append("  stand") }
-                    } else {
-                        withStyle(SpanStyle(color = palette.foreground)) { append("  ${state.posture.label()}") }
-                    }
-                },
-                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
-                maxLines = 1,
-                softWrap = false,
-            )
-        }
-    }
 }
 
 @Preview(name = "Cover 1080x1272 at 360dpi", widthDp = 480, heightDp = 565, showBackground = true, backgroundColor = 0xFF070301)

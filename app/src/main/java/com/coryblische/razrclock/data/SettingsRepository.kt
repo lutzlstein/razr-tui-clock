@@ -5,7 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -22,6 +24,25 @@ class SettingsRepository(context: Context) {
     private val loadedFlag = MutableStateFlow(false)
 
     val loaded: StateFlow<Boolean> = loadedFlag
+
+    init {
+        // v1.1 stored hand-tuned lens positions. Schema 2 replaces them
+        // with the Motorola hole-map defaults.
+        scope.launch {
+            appContext.clockDataStore.edit { prefs ->
+                if ((prefs[Keys.SCHEMA] ?: 1) < LENS_SCHEMA) {
+                    val fresh = LensPair()
+                    prefs[Keys.SCHEMA] = LENS_SCHEMA
+                    prefs[Keys.LENS_AX] = fresh.ax
+                    prefs[Keys.LENS_AY] = fresh.ay
+                    prefs[Keys.LENS_AR] = fresh.ar
+                    prefs[Keys.LENS_BX] = fresh.bx
+                    prefs[Keys.LENS_BY] = fresh.by
+                    prefs[Keys.LENS_BR] = fresh.br
+                }
+            }
+        }
+    }
 
     val preferences: StateFlow<ClockPreferences> = appContext.clockDataStore.data
         .map { it.toClock() }
@@ -49,6 +70,7 @@ class SettingsRepository(context: Context) {
             prefs[Keys.LENS_BY] = next.lenses.by
             prefs[Keys.LENS_BR] = next.lenses.br
             prefs[Keys.REQUEST_CALIBRATION] = next.requestCalibration
+            prefs[Keys.SCHEMA] = LENS_SCHEMA
         }
     }
 
@@ -64,14 +86,18 @@ class SettingsRepository(context: Context) {
         latitude = this[Keys.LATITUDE] ?: ClockPreferences.NEW_YORK_LATITUDE,
         longitude = this[Keys.LONGITUDE] ?: ClockPreferences.NEW_YORK_LONGITUDE,
         locationLabel = this[Keys.LOCATION_LABEL] ?: "New York",
-        lenses = LensPair(
-            ax = this[Keys.LENS_AX] ?: LensPair().ax,
-            ay = this[Keys.LENS_AY] ?: LensPair().ay,
-            ar = this[Keys.LENS_AR] ?: LensPair().ar,
-            bx = this[Keys.LENS_BX] ?: LensPair().bx,
-            by = this[Keys.LENS_BY] ?: LensPair().by,
-            br = this[Keys.LENS_BR] ?: LensPair().br,
-        ),
+        lenses = if ((this[Keys.SCHEMA] ?: 1) >= LENS_SCHEMA) {
+            LensPair(
+                ax = this[Keys.LENS_AX] ?: LensPair().ax,
+                ay = this[Keys.LENS_AY] ?: LensPair().ay,
+                ar = this[Keys.LENS_AR] ?: LensPair().ar,
+                bx = this[Keys.LENS_BX] ?: LensPair().bx,
+                by = this[Keys.LENS_BY] ?: LensPair().by,
+                br = this[Keys.LENS_BR] ?: LensPair().br,
+            )
+        } else {
+            LensPair()
+        },
         requestCalibration = this[Keys.REQUEST_CALIBRATION] ?: false,
     )
 
@@ -94,5 +120,10 @@ class SettingsRepository(context: Context) {
         val LENS_BY = floatPreferencesKey("lens_by")
         val LENS_BR = floatPreferencesKey("lens_br")
         val REQUEST_CALIBRATION = booleanPreferencesKey("request_calibration")
+        val SCHEMA = intPreferencesKey("lens_schema")
+    }
+
+    companion object {
+        const val LENS_SCHEMA = 2
     }
 }

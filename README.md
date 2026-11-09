@@ -115,7 +115,7 @@ Every other line: `app/src/main/res/font/jetbrains_mono_bold.ttf` (JetBrains Mon
 
 ## Lenses, weather, network
 
-Lens rings are a circular reading of the Omarchy mark: nested arcs, gaps, and right-angle end ticks. Lens 1 steps every second, lens 2 every 15 seconds, each step eased rather than spun. Default centers are a side-by-side guess inside the cutout (`760,1100 r70` and `970,1100 r62` on the 1080×1272 grid). Long-press the clock on the cover, or use **Calibrate lenses on cover** in settings, then drag the selected ring, pinch or use +/−, and tap done. Values persist in DataStore.
+Lens rings are a circular reading of the Omarchy mark: nested arcs, gaps, and right-angle end ticks, drawn outside the glass. Lens 1 steps every second, lens 2 every 15 seconds. Defaults come from Motorola's `external_display_holes.png` scaled onto the cutout: lens L `(777.3, 1094.2)` r88.6, lens R `(962.7, 1094.1)` r88.7. Arcs stop at the midline so the rings do not cross. Long-press the clock on the cover, or use **Calibrate lenses on cover**, then drag, pinch or +/−, and tap done. **defaults** restores those hole-map values. A prefs schema bump drops a calibration saved by 1.1.0.
 
 Weather is Open-Meteo, no key, America/New_York for the daily high/low. Default place is New York, °F. Coarse location is optional. The last result is cached and marked `stale` when the refresh fails or is older than 35 minutes. The top line is `TrafficStats` down/up, sampled once a second.
 

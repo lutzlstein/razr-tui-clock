@@ -2,22 +2,16 @@ package com.coryblische.razrclock.data
 
 /**
  * Lens centers and glass radii in the cover's 1080×1272 pixel space.
- *
- * Best estimate until Motorola's own clock-face coordinates are known.
- * The software cutout is the wide rect (585,923)-(1080,1272), 495×349.
- * A photo of the cover shows the two lenses side by side in that block.
- * Centers are a guess along that row, not a measurement of the glass.
- * Radii are the guessed glass size;
- * the maze rings are drawn outside them so they land on the OLED around
- * the holes. These are not measurements.
+ * Defaults are [CoverHoles], scaled from Motorola's external_display_holes.png.
+ * The radii are the glass/bezel, not the maze. Rings are drawn outside them.
  */
 data class LensPair(
-    val ax: Float = 760f,
-    val ay: Float = 1100f,
-    val ar: Float = 70f,
-    val bx: Float = 970f,
-    val by: Float = 1100f,
-    val br: Float = 62f,
+    val ax: Float = CoverHoles.lensL.x,
+    val ay: Float = CoverHoles.lensL.y,
+    val ar: Float = CoverHoles.lensL.radius,
+    val bx: Float = CoverHoles.lensR.x,
+    val by: Float = CoverHoles.lensR.y,
+    val br: Float = CoverHoles.lensR.radius,
 ) {
     fun x(index: Int): Float = if (index == 0) ax else bx
     fun y(index: Int): Float = if (index == 0) ay else by

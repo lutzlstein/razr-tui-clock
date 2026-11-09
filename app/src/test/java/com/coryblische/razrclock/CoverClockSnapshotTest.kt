@@ -38,4 +38,13 @@ class CoverClockSnapshotTest {
             }
         }
     }
+
+    @Test
+    fun coverLensGuides() {
+        paparazzi.snapshot {
+            RazrTheme {
+                ClockScreen(state = ClockFaceState.sample(), showLensGuides = true)
+            }
+        }
+    }
 }
