@@ -26,8 +26,8 @@ class SettingsRepository(context: Context) {
     val loaded: StateFlow<Boolean> = loadedFlag
 
     init {
-        // v1.1 stored hand-tuned lens positions. Schema 2 replaces them
-        // with the Motorola hole-map defaults.
+        // Schema 2 was the hole-map guess. Schema 3 replaces it with the
+        // bezels measured from the 1.2.1-align photo.
         scope.launch {
             appContext.clockDataStore.edit { prefs ->
                 if ((prefs[Keys.SCHEMA] ?: 1) < LENS_SCHEMA) {
@@ -127,6 +127,6 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
-        const val LENS_SCHEMA = 2
+        const val LENS_SCHEMA = 3
     }
 }

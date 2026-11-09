@@ -19,16 +19,16 @@ class RoundTwoTest {
     }
 
     @Test
-    fun motorolaHoleMapMatchesPublishedCoverPixels() {
-        assertEquals(777.3f, CoverHoles.lensL.x, 0.15f)
-        assertEquals(1094.2f, CoverHoles.lensL.y, 0.15f)
-        assertEquals(88.6f, CoverHoles.lensL.radius, 0.15f)
-        assertEquals(962.7f, CoverHoles.lensR.x, 0.15f)
-        assertEquals(1094.1f, CoverHoles.lensR.y, 0.15f)
-        assertEquals(88.7f, CoverHoles.lensR.radius, 0.15f)
-        assertEquals(631.3f, CoverHoles.flash.x, 0.15f)
-        assertEquals(1095.3f, CoverHoles.flash.y, 0.15f)
-        assertEquals(28.3f, CoverHoles.flash.radius, 0.15f)
+    fun measuredBezelsAreTheLensDefaults() {
+        assertEquals(721f, CoverHoles.lensL.x, 0.15f)
+        assertEquals(1090f, CoverHoles.lensL.y, 0.15f)
+        assertEquals(110f, CoverHoles.lensL.radius, 0.15f)
+        assertEquals(948f, CoverHoles.lensR.x, 0.15f)
+        assertEquals(1092f, CoverHoles.lensR.y, 0.15f)
+        assertEquals(113f, CoverHoles.lensR.radius, 0.15f)
+        assertEquals(540f, CoverHoles.flash.x, 0.15f)
+        assertEquals(1088f, CoverHoles.flash.y, 0.15f)
+        assertEquals(34f, CoverHoles.flash.radius, 0.15f)
         val lenses = LensPair()
         assertEquals(CoverHoles.lensL.x, lenses.ax, 0.01f)
         assertTrue(lenses.centersInsideCutout())

@@ -35,9 +35,9 @@ fun LensPair.place(index: Int, widthPx: Float, heightPx: Float): PlacedLens {
 }
 
 /**
- * Maze rings sit outside the glass. The two lenses nearly touch near x 870,
- * so each ring is arc-clipped at the midline instead of being shrunk onto
- * the glass. Drawing is also clipped to the canvas.
+ * Maze rings start a few pixels outside the bezel. The two lenses nearly
+ * touch, so each ring is arc-clipped at the midline instead of crossing
+ * the other bezel. Drawing is also clipped to the canvas.
  */
 fun DrawScope.drawMazeRings(
     lens: PlacedLens,

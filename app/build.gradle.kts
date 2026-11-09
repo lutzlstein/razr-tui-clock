@@ -13,8 +13,8 @@ android {
         applicationId = "com.coryblische.razrclock"
         minSdk = 34
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.2.1-align"
+        versionCode = 5
+        versionName = "1.2.2-align"
     }
 
     buildTypes {
