@@ -45,7 +45,8 @@ class HandPresence(context: Context) {
     private var receiverRegistered = false
     private var listening = false
     private val nearBySensor = HashMap<Int, Boolean>()
-    private val gestureSensors = HashSet<Int>()
+    private val roles = HashMap<Int, SensorRole>()
+    private val pulsed = HashSet<Int>()
     private var idleJob: Job? = null
     private var brightJob: Job? = null
 
@@ -56,9 +57,17 @@ class HandPresence(context: Context) {
     private val listener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
             val value = event.values.firstOrNull() ?: return
-            if (event.sensor.id in gestureSensors) {
-                if (value > 0.5f) publish(logic.onGesture(SystemClock.elapsedRealtime()))
-                return
+            val now = SystemClock.elapsedRealtime()
+            when (roles[event.sensor.id]) {
+                SensorRole.CYCLE -> {
+                    if (rising(event.sensor.id, value)) publish(logic.onCycle(now))
+                    return
+                }
+                SensorRole.WAKE -> {
+                    if (rising(event.sensor.id, value)) publish(logic.onWake(now))
+                    return
+                }
+                SensorRole.APPROACH, null -> Unit
             }
             val near = isNear(event.sensor, value)
             val id = event.sensor.id
@@ -66,7 +75,6 @@ class HandPresence(context: Context) {
             if (was == near) return
             nearBySensor[id] = near
             val anyNear = nearBySensor.values.any { it }
-            val now = SystemClock.elapsedRealtime()
             if (anyNear) publish(logic.onNear(now)) else publish(logic.onFar(now))
         }
 
@@ -141,7 +149,8 @@ class HandPresence(context: Context) {
         val chosen = choose(all)
         val using = ArrayList<String>()
         val skipped = ArrayList<String>()
-        gestureSensors.clear()
+        roles.clear()
+        pulsed.clear()
         nearBySensor.clear()
         for (pick in chosen) {
             val registered = runCatching {
@@ -154,11 +163,11 @@ class HandPresence(context: Context) {
                 if (skipped.none { it.startsWith(label(pick.sensor)) }) skipped += "${label(pick.sensor)} not accepted"
                 continue
             }
-            if (pick.gesture) gestureSensors += pick.sensor.id
-            using += label(pick.sensor)
+            roles[pick.sensor.id] = pick.role
+            using += "${label(pick.sensor)} ${pick.role.name.lowercase()}"
             Log.i(
                 RazrClockApp.TAG,
-                "Hand presence using ${label(pick.sensor)} gesture=${pick.gesture} " +
+                "Hand presence using ${label(pick.sensor)} role=${pick.role} " +
                     "wakeup=${pick.sensor.isWakeUpSensor} range=${pick.sensor.maximumRange}",
             )
         }
@@ -180,7 +189,8 @@ class HandPresence(context: Context) {
         listening = false
         sensorManager?.unregisterListener(listener)
         nearBySensor.clear()
-        gestureSensors.clear()
+        roles.clear()
+        pulsed.clear()
         idleJob?.cancel()
         brightJob?.cancel()
         val next = logic.asleep()
@@ -233,26 +243,42 @@ class HandPresence(context: Context) {
         }
     }
 
-    private data class Pick(val sensor: Sensor, val gesture: Boolean)
+    private data class Pick(val sensor: Sensor, val role: SensorRole)
 
     private fun choose(all: List<Sensor>): List<Pick> {
-        val proximity = preferNonWake(all.filter { it.type == Sensor.TYPE_PROXIMITY || looksLikeProximity(it) })
-        val cover = proximity.filter { isCoverSide(it) }
-        val chosenProximity = if (cover.isNotEmpty()) cover else proximity.take(1)
+        val tagged = all.map { sensor -> sensor to (sensorRole(key(sensor)) ?: proximityFallback(sensor)) }
+        val cycles = preferNonWake(tagged.filter { it.second == SensorRole.CYCLE }.map { it.first })
+        val wakes = preferNonWake(tagged.filter { it.second == SensorRole.WAKE }.map { it.first })
+        val approaches = preferNonWake(tagged.filter { it.second == SensorRole.APPROACH }.map { it.first })
+        val cover = approaches.filter { isCoverSide(it) || sensorRole(key(it)) == SensorRole.APPROACH }
+        val chosenApproach = if (cover.isNotEmpty()) cover else approaches.take(1)
         if (cover.isNotEmpty()) {
-            val skippedInner = proximity.filter { it.id !in chosenProximity.map { pick -> pick.id }.toSet() }
+            val skippedInner = approaches.filter { it.id !in chosenApproach.map { sensor -> sensor.id }.toSet() }
             if (skippedInner.isNotEmpty()) {
                 Log.i(
                     RazrClockApp.TAG,
-                    "Hand presence left inner proximity unused: " +
-                        skippedInner.joinToString { label(it) },
+                    "Hand presence left inner proximity unused: " + skippedInner.joinToString { label(it) },
                 )
             }
-        } else if (chosenProximity.isNotEmpty()) {
-            Log.i(RazrClockApp.TAG, "Hand presence has no cover-side sensor; using ${label(chosenProximity.first())}")
+        } else if (chosenApproach.isNotEmpty()) {
+            Log.i(RazrClockApp.TAG, "Hand presence has no cover approach sensor; using ${label(chosenApproach.first())}")
         }
-        val gestures = preferNonWake(all.filter { looksLikeGesture(it) && it.type != Sensor.TYPE_PROXIMITY })
-        return chosenProximity.map { Pick(it, gesture = false) } + gestures.map { Pick(it, gesture = true) }
+        return chosenApproach.map { Pick(it, SensorRole.APPROACH) } +
+            wakes.map { Pick(it, SensorRole.WAKE) } +
+            cycles.map { Pick(it, SensorRole.CYCLE) }
+    }
+
+    private fun proximityFallback(sensor: Sensor): SensorRole? {
+        if (sensor.type != Sensor.TYPE_PROXIMITY) return null
+        if (sensor.type in BLOCKED_TYPES) return null
+        return SensorRole.APPROACH
+    }
+
+    private fun rising(id: Int, value: Float): Boolean {
+        val high = value > 0.5f
+        val was = id in pulsed
+        if (high) pulsed += id else pulsed -= id
+        return high && !was
     }
 
     private fun preferNonWake(sensors: List<Sensor>): List<Sensor> {
@@ -260,19 +286,6 @@ class HandPresence(context: Context) {
             .groupBy { "${it.stringType}:${it.name}" }
             .values
             .map { group -> group.firstOrNull { !it.isWakeUpSensor } ?: group.first() }
-    }
-
-    private fun looksLikeProximity(sensor: Sensor): Boolean {
-        if (sensor.type in BLOCKED_TYPES) return false
-        val key = key(sensor)
-        return PROXIMITY_HINTS.any { key.contains(it) }
-    }
-
-    private fun looksLikeGesture(sensor: Sensor): Boolean {
-        if (sensor.type in BLOCKED_TYPES) return false
-        val key = key(sensor)
-        if (PROXIMITY_HINTS.any { key.contains(it) }) return false
-        return GESTURE_HINTS.any { key.contains(it) }
     }
 
     private fun isCoverSide(sensor: Sensor): Boolean {
@@ -294,9 +307,7 @@ class HandPresence(context: Context) {
         const val IDLE_BRIGHTNESS = 0.12f
         const val AWAKE_BRIGHTNESS = 1f
 
-        private val PROXIMITY_HINTS = listOf("proximity", "approach")
-        private val GESTURE_HINTS = listOf("gesture", "glance", "flick")
-        private val COVER_HINTS = listOf("cli", "cover", "external", "approach", "flip", "secondary", "rear", "outer")
+        private val COVER_HINTS = listOf("cli", "cover", "external", "approach", "fip", "flip", "secondary", "rear", "outer")
         private val BLOCKED_TYPES = setOf(
             Sensor.TYPE_ACCELEROMETER,
             Sensor.TYPE_GYROSCOPE,

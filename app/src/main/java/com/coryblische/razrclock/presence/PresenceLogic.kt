@@ -60,18 +60,22 @@ class PresenceLogic(
         return state
     }
 
-    /** A one-shot vendor gesture: wake, spin, and advance the view. */
-    fun onGesture(at: Long): State {
-        val view = if (cycle(at)) state.view.next() else state.view
-        val spun = view != state.view || !state.active
+    /** Glance and camera-activate: brighten and spin, leave the view alone. */
+    fun onWake(at: Long): State {
+        val spun = !state.active
+        waveArmed = false
         state = state.copy(
             active = true,
-            view = view,
             spin = if (spun) state.spin + 1 else state.spin,
-            near = state.near,
             idleAt = at + idleMs,
         )
-        if (spun) waveArmed = false
+        return state
+    }
+
+    /** Double-tap cycles the view and does not count as a hand near the glass. */
+    fun onCycle(at: Long): State {
+        if (!cycle(at)) return state
+        state = state.copy(view = state.view.next())
         return state
     }
 

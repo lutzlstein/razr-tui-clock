@@ -26,8 +26,8 @@ class SettingsRepository(context: Context) {
     val loaded: StateFlow<Boolean> = loadedFlag
 
     init {
-        // Schema 2 was the hole-map guess. Schema 3 replaces it with the
-        // bezels measured from the 1.2.1-align photo.
+        // Schema 4 locks the bezels measured on the cover. A saved calibration
+        // from an earlier build is replaced with those defaults.
         scope.launch {
             appContext.clockDataStore.edit { prefs ->
                 if ((prefs[Keys.SCHEMA] ?: 1) < LENS_SCHEMA) {
@@ -130,6 +130,6 @@ class SettingsRepository(context: Context) {
     }
 
     companion object {
-        const val LENS_SCHEMA = 3
+        const val LENS_SCHEMA = 4
     }
 }

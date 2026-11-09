@@ -184,10 +184,10 @@ fun ClockScreen(
                 Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                contentAlignment = Alignment.Center,
+                contentAlignment = if (state.coverView == CoverView.CLOCK) Alignment.Center else Alignment.TopCenter,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    TimeBlock(state)
+                    TimeBlock(state, compact = state.coverView != CoverView.CLOCK)
                     when (state.coverView) {
                         CoverView.WEATHER -> ForecastBlock(state)
                         CoverView.SYSMON -> SysmonBlock(state)
@@ -467,18 +467,20 @@ private fun CalButton(
 }
 
 @Composable
-private fun TimeBlock(state: ClockFaceState) {
+private fun TimeBlock(state: ClockFaceState, compact: Boolean = false) {
     val palette = LocalPalette.current
     val bitcount = LocalBitcount.current
     val mono = LocalMono.current
     val time = formatHoursMinutes(state)
     val seconds = formatSeconds(state)
     val period = formatDayPeriod(state)
+    val digits = if (compact) 84.sp else 108.sp
+    val secondSize = if (compact) 30.sp else 40.sp
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = colorizedDigits(time, palette.brightForeground, palette.accent),
-                style = terminalTextStyle(bitcount, 108.sp, palette.brightForeground, FontWeight.W500),
+                style = terminalTextStyle(bitcount, digits, palette.brightForeground, FontWeight.W500),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 softWrap = false,
@@ -494,7 +496,7 @@ private fun TimeBlock(state: ClockFaceState) {
         if (seconds != null) {
             Text(
                 text = ":$seconds",
-                style = terminalTextStyle(bitcount, 40.sp, palette.accent, FontWeight.W500),
+                style = terminalTextStyle(bitcount, secondSize, palette.accent, FontWeight.W500),
             )
         }
     }
@@ -638,27 +640,28 @@ private fun ForecastBlock(state: ClockFaceState) {
     val use24 = state.preferences.use24Hour
     val fahrenheit = state.preferences.useFahrenheit
     Column(
-        Modifier.padding(top = 8.dp),
+        Modifier.padding(top = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = "forecast",
-            style = terminalTextStyle(mono, 14.sp, palette.darkForeground, FontWeight.Bold),
+            style = terminalTextStyle(mono, 13.sp, palette.darkForeground, FontWeight.Bold),
         )
         if (weather == null || weather.hours.isEmpty()) {
             Text(
                 text = "hourly --",
-                modifier = Modifier.padding(top = 6.dp),
-                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+                modifier = Modifier.padding(top = 2.dp),
+                style = terminalTextStyle(mono, 18.sp, palette.foreground, FontWeight.Bold),
             )
             return
         }
-        weather.hours.forEach { hour ->
+        // Three rows fit above the lens rings. A fourth was clipped on the cover.
+        weather.hours.take(3).forEach { hour ->
             Text(
                 text = "${formatHourLabel(hour.hour, use24)}   ${formatTemperature(hour.tempC, fahrenheit)}   ${conditionLabel(hour.code)}",
-                modifier = Modifier.padding(top = 2.dp),
-                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+                style = terminalTextStyle(mono, 18.sp, palette.foreground, FontWeight.Bold),
                 maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -668,7 +671,7 @@ private fun ForecastBlock(state: ClockFaceState) {
 private fun SysmonBlock(state: ClockFaceState) {
     val palette = LocalPalette.current
     val mono = LocalMono.current
-    val style = terminalTextStyle(mono, 26.sp, palette.brightForeground, FontWeight.Bold)
+    val style = terminalTextStyle(mono, 20.sp, palette.brightForeground, FontWeight.Bold)
     val dim = terminalTextStyle(mono, 14.sp, palette.darkForeground, FontWeight.Bold)
     val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
     val charging = state.batteryStatus == BatteryStatus.CHARGING || state.batteryStatus == BatteryStatus.FULL

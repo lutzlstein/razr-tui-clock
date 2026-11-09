@@ -2,6 +2,8 @@ package com.coryblische.razrclock
 
 import com.coryblische.razrclock.presence.CoverView
 import com.coryblische.razrclock.presence.PresenceLogic
+import com.coryblische.razrclock.presence.SensorRole
+import com.coryblische.razrclock.presence.sensorRole
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -69,15 +71,39 @@ class PresenceLogicTest {
     }
 
     @Test
-    fun gestureCyclesAndASecondPulseInsideTheCooldownDoesNot() {
-        val first = logic.onGesture(0L)
+    fun wakeDoesNotChangeTheView() {
+        val woke = logic.onWake(0L)
+        assertTrue(woke.active)
+        assertEquals(CoverView.CLOCK, woke.view)
+        assertEquals(1, woke.spin)
+        val again = logic.onWake(500L)
+        assertEquals(1, again.spin)
+        assertEquals(CoverView.CLOCK, again.view)
+    }
+
+    @Test
+    fun doubleTapCyclesWithoutWaking() {
+        val first = logic.onCycle(0L)
         assertEquals(CoverView.WEATHER, first.view)
-        assertTrue(first.active)
-        assertEquals(1, first.spin)
-        val second = logic.onGesture(200L)
-        assertEquals(CoverView.WEATHER, second.view)
-        assertEquals(10_200L, second.idleAt)
-        val third = logic.onGesture(800L)
-        assertEquals(CoverView.SYSMON, third.view)
+        assertFalse(first.active)
+        assertEquals(0, first.spin)
+        val bounced = logic.onCycle(200L)
+        assertEquals(CoverView.WEATHER, bounced.view)
+        val next = logic.onCycle(800L)
+        assertEquals(CoverView.SYSMON, next.view)
+        assertFalse(next.active)
+    }
+}
+
+class SensorRoleTest {
+    @Test
+    fun liveRazrSensors() {
+        assertEquals(SensorRole.APPROACH, sensorRole("com.motorola.sensor.approach_prox Approach prox"))
+        assertEquals(SensorRole.APPROACH, sensorRole("com.motorola.sensor.fip_approach fip_approach"))
+        assertEquals(SensorRole.WAKE, sensorRole("com.motorola.sensor.camera_activate camera_activate gesture"))
+        assertEquals(SensorRole.WAKE, sensorRole("com.motorola.sensor.glance Glance"))
+        assertEquals(SensorRole.CYCLE, sensorRole("com.motorola.sensor.double_tap Double Tap Gesture"))
+        assertEquals(SensorRole.CYCLE, sensorRole("com.motorola.sensor.double_tap_2 doubletap"))
+        assertEquals(null, sensorRole("android.sensor.proximity Proximity"))
     }
 }
