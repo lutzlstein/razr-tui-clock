@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Razr Clock</string>
+    <string name="settings_intro">Allow this app under Settings, External display, App settings, then choose Auto transition. The cover display does not host ordinary tasks, so that pin is the path that works. Stand mode then keeps the clock awake when the hinge is half open.</string>
+    <string name="preview_on_this_screen">Preview on this screen</string>
+    <string name="show_on_cover">Show on cover display now</string>
+    <string name="move_to_rear">Move activity to rear display</string>
+    <string name="open_dream_settings">Screensaver settings</string>
+    <string name="open_full_screen_intent">Full-screen intent access</string>
+    <string name="open_battery_settings">Ignore battery optimization</string>
+    <string name="open_notification_settings">Notification settings</string>
+    <string name="use_24_hour">24-hour time</string>
+    <string name="show_seconds">Show seconds</string>
+    <string name="show_date">Show date</string>
+    <string name="show_battery">Show battery</string>
+    <string name="stand_mode">Stand mode when half folded</string>
+    <string name="stand_only_charging">Stand mode only while charging</string>
+    <string name="notif_channel_stand">Stand mode</string>
+    <string name="notif_channel_stand_desc">Keeps the desk clock armed while the phone is folded into a tent or stand.</string>
+    <string name="notif_channel_alert">Desk clock</string>
+    <string name="notif_channel_alert_desc">Wakes the clock when the phone enters tent or stand posture.</string>
+    <string name="notif_armed_title">Stand mode armed</string>
+    <string name="notif_armed_text">Watching the hinge. The clock takes over when the phone is half open.</string>
+    <string name="notif_active_title">Desk clock on</string>
+    <string name="notif_active_text">Half-open posture. The clock stays on, dimmed.</string>
+</resources>

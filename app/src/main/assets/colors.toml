@@ -1,0 +1,31 @@
+# Omarchy theme "Maine Autumn Sunset" (dark).
+# Same keys can be replaced here, or pushed over adb to
+# Android/data/com.coryblische.razrclock/files/colors.toml
+# Missing keys fall back to this palette.
+
+accent = "#c15a3c"
+selection = "#502319"
+selection_foreground = "#d48460"
+muted = "#625c58"
+background = "#0e0502"
+dark_background = "#0b0402"
+darker_background = "#070301"
+lighter_background = "#261e1b"
+foreground = "#e7d3ca"
+dark_foreground = "#ad9e98"
+light_foreground = "#ebdad2"
+bright_foreground = "#edded7"
+red = "#c15a3c"
+yellow = "#d48460"
+orange = "#ca7359"
+green = "#3d8c50"
+cyan = "#00b0f4"
+blue = "#36a3c8"
+magenta = "#f48737"
+brown = "#794535"
+bright_red = "#f07b53"
+bright_yellow = "#ffa778"
+bright_green = "#57b76d"
+bright_cyan = "#39d6ff"
+bright_blue = "#56caf9"
+bright_magenta = "#ffa83b"
