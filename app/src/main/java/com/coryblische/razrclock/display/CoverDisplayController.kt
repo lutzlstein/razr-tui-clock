@@ -87,6 +87,15 @@ class CoverDisplayController(
 
     fun isPresentationShowing(): Boolean = presentation?.isShowing == true
 
+    fun render(state: ClockFaceState) {
+        presentation?.takeIf { it.isShowing }?.render(state)
+    }
+
+    /** Null keeps the stand-mode dim. A value is the hand-presence level. */
+    fun applyBrightness(level: Float?) {
+        presentation?.takeIf { it.isShowing }?.applyBrightness(level)
+    }
+
     fun note(message: String) {
         _report.value = message
         Log.i(RazrClockApp.TAG, message)

@@ -2,6 +2,7 @@ package com.coryblische.razrclock.data
 
 import com.coryblische.razrclock.posture.BatteryStatus
 import com.coryblische.razrclock.posture.DevicePosture
+import com.coryblische.razrclock.presence.CoverView
 import java.time.LocalDateTime
 
 data class ClockFaceState(
@@ -17,6 +18,9 @@ data class ClockFaceState(
     val upBytesPerSec: Double = 48_000.0,
     val ramPercent: Int? = 62,
     val weather: WeatherNow? = WeatherNow.sample(),
+    val handActive: Boolean = false,
+    val coverView: CoverView = CoverView.CLOCK,
+    val handSpin: Int = 0,
 ) {
     companion object {
         fun sample(): ClockFaceState = ClockFaceState(

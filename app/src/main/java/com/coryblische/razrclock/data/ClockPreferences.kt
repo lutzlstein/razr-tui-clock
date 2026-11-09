@@ -14,8 +14,10 @@ data class ClockPreferences(
     val locationLabel: String = "New York",
     val lenses: LensPair = LensPair(),
     val requestCalibration: Boolean = false,
-    /** White alignment grid. Default on for 1.2.1-align only; next release should default false. */
-    val lensAlign: Boolean = true,
+    /** White alignment grid. Off unless someone turns it on for a measurement photo. */
+    val lensAlign: Boolean = false,
+    /** Proximity wake, ring spin, and wave-to-change-view. */
+    val handGestures: Boolean = true,
 ) {
     companion object {
         const val NEW_YORK_LATITUDE = 40.7128f

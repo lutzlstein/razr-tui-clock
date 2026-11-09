@@ -40,6 +40,7 @@ import com.coryblische.razrclock.posture.FoldSignal
 import com.coryblische.razrclock.theme.RazrTheme
 import com.coryblische.razrclock.ui.AppRoot
 import com.coryblische.razrclock.ui.ClockScreen
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -56,6 +57,8 @@ class MainActivity : ComponentActivity(), WindowAreaPresentationSessionCallback,
     private var rearAttempted = false
     private val windowAreas = WindowAreaController.getOrCreate()
     private val uiExecutor: Executor by lazy { ContextCompat.getMainExecutor(this) }
+    private var rearPresence: Job? = null
+    private var rearAcquired = false
 
     private val requestNotifications = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -199,7 +202,12 @@ class MainActivity : ComponentActivity(), WindowAreaPresentationSessionCallback,
 
     override fun onSessionStarted(session: WindowAreaSessionPresenter) {
         presentSession = session
-        (application as RazrClockApp).rearSessionActive = true
+        val appPresence = application as RazrClockApp
+        appPresence.rearSessionActive = true
+        if (!rearAcquired) {
+            appPresence.handPresence.acquire()
+            rearAcquired = true
+        }
         rearLifecycle = ComposeHostLifecycle()
         report("Rear presentation session started.")
         val app = application as RazrClockApp
@@ -216,9 +224,17 @@ class MainActivity : ComponentActivity(), WindowAreaPresentationSessionCallback,
         session.setContentView(view)
         session.window?.let { window ->
             window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            window.attributes = window.attributes.apply { screenBrightness = STAND_WINDOW_BRIGHTNESS }
             WindowCompat.getInsetsController(window, view).let { controller ->
                 controller.hide(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        rearPresence?.cancel()
+        rearPresence = lifecycleScope.launch {
+            appPresence.handPresence.cue.collect { cue ->
+                val level = if (cue.enabled) cue.brightness else STAND_WINDOW_BRIGHTNESS
+                session.window?.let { rearWindow ->
+                    rearWindow.attributes = rearWindow.attributes.apply { screenBrightness = level }
+                }
             }
         }
         view.attachComposeOwners(rearLifecycle)
@@ -235,7 +251,14 @@ class MainActivity : ComponentActivity(), WindowAreaPresentationSessionCallback,
         presentSession = null
         transferSession = null
         rearAttempted = false
-        (application as RazrClockApp).rearSessionActive = false
+        rearPresence?.cancel()
+        rearPresence = null
+        val app = application as RazrClockApp
+        if (rearAcquired) {
+            app.handPresence.release()
+            rearAcquired = false
+        }
+        app.rearSessionActive = false
         rearLifecycle.destroy()
         rearLifecycle = ComposeHostLifecycle()
         val detail = t?.let { "${it.javaClass.simpleName}: ${it.message}" } ?: "closed"

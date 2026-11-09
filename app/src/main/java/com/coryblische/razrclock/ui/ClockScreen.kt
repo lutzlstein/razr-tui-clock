@@ -1,5 +1,8 @@
 package com.coryblische.razrclock.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -53,8 +57,11 @@ import com.coryblische.razrclock.data.formatDayPeriod
 import com.coryblische.razrclock.data.formatHoursMinutes
 import com.coryblische.razrclock.data.formatSeconds
 import com.coryblische.razrclock.data.formatRate
+import com.coryblische.razrclock.data.conditionLabel
+import com.coryblische.razrclock.data.formatHourLabel
 import com.coryblische.razrclock.data.formatTemperature
 import com.coryblische.razrclock.display.CoverGeometry
+import com.coryblische.razrclock.presence.CoverView
 import com.coryblische.razrclock.posture.BatteryStatus
 import com.coryblische.razrclock.posture.label
 import com.coryblische.razrclock.theme.LocalBitcount
@@ -95,6 +102,12 @@ fun ClockScreen(
     val epoch = state.now.toEpochSecond(ZoneOffset.UTC)
     val fast = rememberSteppedDegrees(epoch, periodSeconds = 1, degreesPerStep = 15f)
     val slow = rememberSteppedDegrees(epoch, periodSeconds = 15, degreesPerStep = 12f)
+    val burst = remember { Animatable(0f) }
+    LaunchedEffect(state.handSpin) {
+        if (state.handSpin == 0) return@LaunchedEffect
+        burst.snapTo(0f)
+        burst.animateTo(360f, tween(durationMillis = 680, easing = FastOutSlowInEasing))
+    }
     val colors = ringColors(palette)
 
     CompositionLocalProvider(LocalPalette provides palette) {
@@ -118,8 +131,8 @@ fun ClockScreen(
                     }
                     val a = lenses.place(0, size.width, size.height)
                     val b = lenses.place(1, size.width, size.height)
-                    drawMazeRings(a, b, fast, colors, emphasized = calibrating && selected == 0)
-                    drawMazeRings(b, a, slow, colors, emphasized = calibrating && selected == 1)
+                    drawMazeRings(a, b, fast + burst.value, colors, emphasized = calibrating && selected == 0)
+                    drawMazeRings(b, a, slow + burst.value, colors, emphasized = calibrating && selected == 1)
                     if (state.preferences.lensAlign) {
                         drawBlackLensGuides(a, b)
                     }
@@ -175,7 +188,14 @@ fun ClockScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     TimeBlock(state)
-                    WeatherBlock(state)
+                    when (state.coverView) {
+                        CoverView.WEATHER -> ForecastBlock(state)
+                        CoverView.SYSMON -> SysmonBlock(state)
+                        CoverView.CLOCK -> {
+                            WeatherBlock(state)
+                            if (state.handActive) HourlyLine(state)
+                        }
+                    }
                 }
             }
             if (!cover) {
@@ -588,6 +608,88 @@ private fun WeatherGlyph(code: Int?, modifier: Modifier = Modifier) {
             }
         },
     )
+}
+
+@Composable
+private fun HourlyLine(state: ClockFaceState) {
+    val hours = state.weather?.hours.orEmpty()
+    if (hours.isEmpty()) return
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    val use24 = state.preferences.use24Hour
+    val fahrenheit = state.preferences.useFahrenheit
+    Text(
+        text = hours.joinToString("   ") { hour ->
+            "${formatHourLabel(hour.hour, use24)} ${formatTemperature(hour.tempC, fahrenheit)}"
+        },
+        modifier = Modifier.padding(top = 8.dp),
+        style = terminalTextStyle(mono, 16.sp, palette.lightForeground, FontWeight.Bold),
+        textAlign = TextAlign.Center,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun ForecastBlock(state: ClockFaceState) {
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    val weather = state.weather
+    val use24 = state.preferences.use24Hour
+    val fahrenheit = state.preferences.useFahrenheit
+    Column(
+        Modifier.padding(top = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "forecast",
+            style = terminalTextStyle(mono, 14.sp, palette.darkForeground, FontWeight.Bold),
+        )
+        if (weather == null || weather.hours.isEmpty()) {
+            Text(
+                text = "hourly --",
+                modifier = Modifier.padding(top = 6.dp),
+                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+            )
+            return
+        }
+        weather.hours.forEach { hour ->
+            Text(
+                text = "${formatHourLabel(hour.hour, use24)}   ${formatTemperature(hour.tempC, fahrenheit)}   ${conditionLabel(hour.code)}",
+                modifier = Modifier.padding(top = 2.dp),
+                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SysmonBlock(state: ClockFaceState) {
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    val style = terminalTextStyle(mono, 26.sp, palette.brightForeground, FontWeight.Bold)
+    val dim = terminalTextStyle(mono, 14.sp, palette.darkForeground, FontWeight.Bold)
+    val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
+    val charging = state.batteryStatus == BatteryStatus.CHARGING || state.batteryStatus == BatteryStatus.FULL
+    Column(
+        Modifier.padding(top = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("sysmon", style = dim)
+        Text("↓ ${formatRate(state.downBytesPerSec)}", modifier = Modifier.padding(top = 4.dp), style = style, maxLines = 1)
+        Text("↑ ${formatRate(state.upBytesPerSec)}", style = style, maxLines = 1)
+        Text(
+            text = "ram ${state.ramPercent?.let { "$it%" } ?: "--"}",
+            style = style,
+            maxLines = 1,
+        )
+        Text(
+            text = "$percent${if (charging) "  charging" else ""}",
+            style = terminalTextStyle(mono, 22.sp, palette.brightGreen, FontWeight.Bold),
+            maxLines = 1,
+        )
+    }
 }
 
 @Preview(name = "Cover 1080x1272 at 360dpi", widthDp = 480, heightDp = 565, showBackground = true, backgroundColor = 0xFF070301)

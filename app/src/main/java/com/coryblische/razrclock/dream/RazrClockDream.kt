@@ -18,6 +18,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 
@@ -35,6 +37,7 @@ class RazrClockDream : DreamService() {
         val app = application as RazrClockApp
         app.postureMonitor.acquire()
         app.batteryMonitor.acquire()
+        app.handPresence.acquire()
         val face = mutableStateOf(app.face(LocalDateTime.now()))
         tick = scope.launch {
             while (isActive) {
@@ -63,6 +66,22 @@ class RazrClockDream : DreamService() {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
         composeLifecycle.resume()
+        scope.launch {
+            app.handPresence.cue
+                .map { it.enabled to it.brightness }
+                .distinctUntilChanged()
+                .collect { (enabled, level) ->
+                    window?.attributes = window?.attributes?.apply {
+                        screenBrightness = if (enabled) level else STAND_WINDOW_BRIGHTNESS
+                    }
+                }
+        }
+        scope.launch {
+            app.handPresence.cue
+                .map { Triple(it.active, it.view, it.spin) }
+                .distinctUntilChanged()
+                .collect { face.value = app.face() }
+        }
     }
 
     override fun onDetachedFromWindow() {
@@ -72,6 +91,7 @@ class RazrClockDream : DreamService() {
         val app = application as? RazrClockApp
         app?.postureMonitor?.release()
         app?.batteryMonitor?.release()
+        app?.handPresence?.release()
         super.onDetachedFromWindow()
     }
 }

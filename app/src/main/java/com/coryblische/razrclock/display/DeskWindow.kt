@@ -10,12 +10,10 @@ fun Activity.applyDeskWindow(active: Boolean) {
     val params = window.attributes
     if (active) {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        params.screenBrightness = STAND_WINDOW_BRIGHTNESS
         setShowWhenLocked(true)
         setTurnScreenOn(true)
     } else {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        params.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         setShowWhenLocked(false)
     }
     window.attributes = params

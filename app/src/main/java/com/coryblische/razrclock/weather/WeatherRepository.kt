@@ -16,7 +16,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.coryblische.razrclock.RazrClockApp
 import com.coryblische.razrclock.data.ClockPreferences
 import com.coryblische.razrclock.data.SettingsRepository
+import com.coryblische.razrclock.data.HourCast
 import com.coryblische.razrclock.data.WeatherNow
+import com.coryblische.razrclock.data.upcomingHours
 import com.coryblische.razrclock.data.clockDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +36,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 
 class WeatherRepository(
@@ -81,6 +84,7 @@ class WeatherRepository(
             fetchedAtMs = fetched,
             stale = System.currentTimeMillis() - fetched > STALE_MS,
             place = stored[Keys.PLACE] ?: "",
+            hours = decodeHours(stored[Keys.HOURS]),
         )
     }
 
@@ -98,6 +102,7 @@ class WeatherRepository(
                 stored[Keys.CODE] = fetched.code
                 stored[Keys.FETCHED] = fetched.fetchedAtMs
                 stored[Keys.PLACE] = fetched.place
+                stored[Keys.HOURS] = encodeHours(fetched.hours)
                 stored[Keys.OK] = true
             }
         } else {
@@ -136,13 +141,15 @@ class WeatherRepository(
                 "?latitude=$latitude&longitude=$longitude" +
                 "&current=temperature_2m,weather_code" +
                 "&daily=temperature_2m_max,temperature_2m_min" +
+                "&hourly=temperature_2m,weather_code" +
+                "&forecast_hours=8" +
                 "&temperature_unit=celsius&timezone=America%2FNew_York&forecast_days=1",
         )
         return runCatching {
             val connection = (url.openConnection() as HttpURLConnection).apply {
                 connectTimeout = 8_000
                 readTimeout = 8_000
-                setRequestProperty("User-Agent", "RazrClock/1.1")
+                setRequestProperty("User-Agent", "RazrClock/1.3")
             }
             try {
                 if (connection.responseCode !in 200..299) return null
@@ -150,6 +157,21 @@ class WeatherRepository(
                 val json = JSONObject(body)
                 val current = json.getJSONObject("current")
                 val daily = json.getJSONObject("daily")
+                val hours = json.optJSONObject("hourly")?.let { hourly ->
+                    val times = hourly.optJSONArray("time")
+                    val temps = hourly.optJSONArray("temperature_2m")
+                    val codes = hourly.optJSONArray("weather_code")
+                    if (times == null || temps == null || codes == null) {
+                        emptyList()
+                    } else {
+                        upcomingHours(
+                            times = List(times.length()) { times.getString(it) },
+                            temps = List(temps.length()) { temps.getDouble(it) },
+                            codes = List(codes.length()) { codes.getInt(it) },
+                            now = LocalDateTime.now(),
+                        )
+                    }
+                }.orEmpty()
                 WeatherNow(
                     tempC = current.getDouble("temperature_2m"),
                     code = current.getInt("weather_code"),
@@ -158,6 +180,7 @@ class WeatherRepository(
                     fetchedAtMs = System.currentTimeMillis(),
                     stale = false,
                     place = place,
+                    hours = hours,
                 )
             } finally {
                 connection.disconnect()
@@ -172,7 +195,23 @@ class WeatherRepository(
         val CODE = intPreferencesKey("weather_code")
         val FETCHED = longPreferencesKey("weather_fetched_at")
         val PLACE = stringPreferencesKey("weather_place")
+        val HOURS = stringPreferencesKey("weather_hours")
         val OK = booleanPreferencesKey("weather_ok")
+    }
+
+    private fun encodeHours(hours: List<HourCast>): String =
+        hours.joinToString("|") { "${it.hour},${it.tempC},${it.code}" }
+
+    private fun decodeHours(raw: String?): List<HourCast> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return raw.split("|").mapNotNull { part ->
+            val bits = part.split(",")
+            if (bits.size != 3) return@mapNotNull null
+            val hour = bits[0].toIntOrNull() ?: return@mapNotNull null
+            val temp = bits[1].toDoubleOrNull() ?: return@mapNotNull null
+            val code = bits[2].toIntOrNull() ?: return@mapNotNull null
+            HourCast(hour, temp, code)
+        }
     }
 
     companion object {

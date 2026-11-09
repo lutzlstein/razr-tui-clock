@@ -2,6 +2,12 @@ package com.coryblische.razrclock.data
 
 import kotlin.math.roundToInt
 
+data class HourCast(
+    val hour: Int,
+    val tempC: Double,
+    val code: Int,
+)
+
 data class WeatherNow(
     val tempC: Double,
     val highC: Double,
@@ -10,6 +16,7 @@ data class WeatherNow(
     val fetchedAtMs: Long,
     val stale: Boolean,
     val place: String,
+    val hours: List<HourCast> = emptyList(),
 ) {
     fun condition(): String = conditionLabel(code)
 
@@ -22,6 +29,12 @@ data class WeatherNow(
             fetchedAtMs = 0L,
             stale = false,
             place = "New York",
+            hours = listOf(
+                HourCast(22, 21.0, 1),
+                HourCast(23, 20.0, 1),
+                HourCast(0, 19.0, 2),
+                HourCast(1, 18.5, 3),
+            ),
         )
     }
 }
@@ -46,6 +59,33 @@ fun formatTemperature(celsius: Double, fahrenheit: Boolean): String {
     val value = if (fahrenheit) celsiusToFahrenheit(celsius) else celsius
     val unit = if (fahrenheit) "F" else "C"
     return "${value.roundToInt()}°$unit"
+}
+
+fun formatHourLabel(hour: Int, use24Hour: Boolean): String {
+    if (use24Hour) return hour.toString().padStart(2, '0')
+    val onDial = hour % 12
+    val label = if (onDial == 0) 12 else onDial
+    return "$label${if (hour < 12) "a" else "p"}"
+}
+
+/** Hours at or after [now]'s hour, in list order, capped at [count]. */
+fun upcomingHours(
+    times: List<String>,
+    temps: List<Double>,
+    codes: List<Int>,
+    now: java.time.LocalDateTime,
+    count: Int = 4,
+): List<HourCast> {
+    val start = now.withMinute(0).withSecond(0).withNano(0)
+    val out = ArrayList<HourCast>(count)
+    for (i in times.indices) {
+        if (i >= temps.size || i >= codes.size) break
+        val stamp = runCatching { java.time.LocalDateTime.parse(times[i]) }.getOrNull() ?: continue
+        if (stamp.isBefore(start)) continue
+        out += HourCast(stamp.hour, temps[i], codes[i])
+        if (out.size == count) break
+    }
+    return out
 }
 
 fun formatWeatherLine(weather: WeatherNow, fahrenheit: Boolean): String {

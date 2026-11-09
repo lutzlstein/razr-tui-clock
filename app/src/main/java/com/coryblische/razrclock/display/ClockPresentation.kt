@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.Display
 import android.view.WindowManager
+import com.coryblische.razrclock.RazrClockApp
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -24,6 +25,13 @@ class ClockPresentation(
 
     fun render(state: ClockFaceState) {
         face.value = state
+    }
+
+    fun applyBrightness(level: Float?) {
+        val window = window ?: return
+        window.attributes = window.attributes.apply {
+            screenBrightness = level ?: STAND_WINDOW_BRIGHTNESS
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,7 +61,17 @@ class ClockPresentation(
         composeLifecycle.resume()
     }
 
+    override fun onStart() {
+        super.onStart()
+        (context.applicationContext as? RazrClockApp)?.handPresence?.let { presence ->
+            presence.acquire()
+            val cue = presence.cue.value
+            if (cue.enabled) applyBrightness(cue.brightness)
+        }
+    }
+
     override fun onStop() {
+        (context.applicationContext as? RazrClockApp)?.handPresence?.release()
         composeLifecycle.destroy()
         super.onStop()
     }

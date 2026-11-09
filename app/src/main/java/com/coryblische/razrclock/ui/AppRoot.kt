@@ -6,6 +6,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,9 +30,11 @@ import com.coryblische.razrclock.MainActivity
 import com.coryblische.razrclock.RazrClockApp
 import com.coryblische.razrclock.data.ClockFaceState
 import com.coryblische.razrclock.data.LensPair
+import com.coryblische.razrclock.display.STAND_WINDOW_BRIGHTNESS
 import com.coryblische.razrclock.display.applyDeskWindow
 import com.coryblische.razrclock.posture.PostureRules
 import com.coryblische.razrclock.posture.label
+import com.coryblische.razrclock.presence.CoverView
 import com.coryblische.razrclock.stand.StandModeService
 import com.coryblische.razrclock.theme.RazrTheme
 import com.coryblische.razrclock.wantsCalibration
@@ -52,6 +55,7 @@ fun AppRoot(activity: MainActivity) {
     val rates by app.systemMonitor.rates.collectAsState()
     val ram by app.systemMonitor.ramPercent.collectAsState()
     val weather by app.weather.current.collectAsState()
+    val hand by app.handPresence.cue.collectAsState()
     val scope = rememberCoroutineScope()
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -87,6 +91,9 @@ fun AppRoot(activity: MainActivity) {
         upBytesPerSec = rates.upBytesPerSec,
         ramPercent = ram,
         weather = weather,
+        handActive = prefs.handGestures && hand.enabled && hand.active,
+        coverView = if (prefs.handGestures && hand.enabled) hand.view else CoverView.CLOCK,
+        handSpin = if (prefs.handGestures && hand.enabled) hand.spin else 0,
     )
     SideEffect { activity.renderRear(clock) }
 
@@ -154,8 +161,37 @@ fun AppRoot(activity: MainActivity) {
         screen = SCREEN_SETTINGS
     }
 
-    DisposableEffect(screen, standActive) {
-        val desk = screen == SCREEN_CLOCK && standActive
+    DisposableEffect(screen) {
+        if (screen == SCREEN_CLOCK) app.handPresence.acquire()
+        onDispose { if (screen == SCREEN_CLOCK) app.handPresence.release() }
+    }
+
+    LaunchedEffect(screen, standActive, prefs.handGestures) {
+        if (screen != SCREEN_CLOCK) {
+            activity.window.attributes = activity.window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
+            return@LaunchedEffect
+        }
+        if (!prefs.handGestures) {
+            activity.window.attributes = activity.window.attributes.apply {
+                screenBrightness = if (standActive) {
+                    STAND_WINDOW_BRIGHTNESS
+                } else {
+                    WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
+            }
+            return@LaunchedEffect
+        }
+        app.handPresence.cue.collect { cue ->
+            activity.window.attributes = activity.window.attributes.apply {
+                screenBrightness = cue.brightness
+            }
+        }
+    }
+
+    DisposableEffect(screen, standActive, prefs.handGestures) {
+        val desk = screen == SCREEN_CLOCK && (standActive || prefs.handGestures)
         activity.applyDeskWindow(desk)
         val insets = WindowCompat.getInsetsController(activity.window, activity.window.decorView)
         if (screen == SCREEN_CLOCK) {
@@ -178,6 +214,11 @@ fun AppRoot(activity: MainActivity) {
         appendLine("sensors: hinge=${posture.hingePresent}  motorola posture=${posture.vendorPresent}")
         appendLine("battery: ${if (battery.percent < 0) "--" else "${battery.percent}%"} ${battery.status}")
         appendLine("stand=$standActive  onCover=$onCover  rear=${app.rearSessionActive}")
+        appendLine(
+            "hand: ${if (prefs.handGestures) "on" else "off"} active=${hand.active} " +
+                "view=${hand.view} using=${hand.using}",
+        )
+        if (hand.available.isNotBlank()) appendLine(hand.available)
         appendLine(report)
         append(app.cover.describe(activity))
     }
