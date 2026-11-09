@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,6 +61,7 @@ import com.coryblische.razrclock.theme.LocalBitcount
 import com.coryblische.razrclock.theme.LocalMono
 import com.coryblische.razrclock.theme.LocalPalette
 import com.coryblische.razrclock.theme.RazrTheme
+import com.coryblische.razrclock.theme.onWhite
 import com.coryblische.razrclock.theme.terminalTextStyle
 import java.time.ZoneOffset
 import kotlin.math.roundToInt
@@ -83,7 +86,7 @@ fun ClockScreen(
     onLenses: (LensPair) -> Unit = {},
     onCalibrationDone: () -> Unit = {},
 ) {
-    val palette = LocalPalette.current
+    val palette = if (state.preferences.lensAlign) LocalPalette.current.onWhite() else LocalPalette.current
     val mono = LocalMono.current
     val bitcount = LocalBitcount.current
     var selected by remember { mutableIntStateOf(0) }
@@ -94,10 +97,11 @@ fun ClockScreen(
     val slow = rememberSteppedDegrees(epoch, periodSeconds = 15, degreesPerStep = 12f)
     val colors = ringColors(palette)
 
+    CompositionLocalProvider(LocalPalette provides palette) {
     BoxWithConstraints(
         modifier
             .fillMaxSize()
-            .background(palette.darkerBackground)
+            .background(if (state.preferences.lensAlign) Color.White else palette.darkerBackground)
             .semantics { contentDescription = accessibleClockLabel(state) },
     ) {
         val widthPx = constraints.maxWidth.toFloat()
@@ -109,10 +113,16 @@ fun ClockScreen(
             Modifier
                 .fillMaxSize()
                 .drawBehind {
+                    if (state.preferences.lensAlign) {
+                        drawAlignmentGrid()
+                    }
                     val a = lenses.place(0, size.width, size.height)
                     val b = lenses.place(1, size.width, size.height)
                     drawMazeRings(a, b, fast, colors, emphasized = calibrating && selected == 0)
                     drawMazeRings(b, a, slow, colors, emphasized = calibrating && selected == 1)
+                    if (state.preferences.lensAlign) {
+                        drawBlackLensGuides(a, b)
+                    }
                     if (showLensGuides) {
                         drawLensGuides(palette)
                     }
@@ -197,7 +207,12 @@ fun ClockScreen(
             )
             Text(
                 text = if (state.standActive) "stand" else state.posture.label(),
-                modifier = Modifier.pinBelow(iconBottom + 10f * sy, left, width),
+                modifier = Modifier.pinBottomClear(
+                    bottomPx = heightPx - 28f * sy,
+                    minTopPx = iconBottom + 8f * sy,
+                    leftPx = left,
+                    maxWidthPx = width,
+                ),
                 style = terminalTextStyle(
                     mono,
                     22.sp,
@@ -238,6 +253,7 @@ fun ClockScreen(
             )
         }
     }
+    }
 }
 
 private fun Modifier.pinAbove(bottomPx: Float, leftPx: Float, maxWidthPx: Float): Modifier = layout { measurable, constraints ->
@@ -249,17 +265,95 @@ private fun Modifier.pinAbove(bottomPx: Float, leftPx: Float, maxWidthPx: Float)
     }
 }
 
-private fun Modifier.pinBelow(topPx: Float, leftPx: Float, maxWidthPx: Float): Modifier = layout { measurable, constraints ->
+private fun Modifier.pinBottomClear(
+    bottomPx: Float,
+    minTopPx: Float,
+    leftPx: Float,
+    maxWidthPx: Float,
+): Modifier = layout { measurable, constraints ->
     val maxW = maxWidthPx.roundToInt().coerceIn(1, constraints.maxWidth)
     val placeable = measurable.measure(Constraints(maxWidth = maxW))
+    val top = (bottomPx - placeable.height).roundToInt().coerceAtLeast(minTopPx.roundToInt())
     layout(constraints.maxWidth, constraints.maxHeight) {
-        placeable.place(leftPx.roundToInt(), topPx.roundToInt())
+        placeable.place(leftPx.roundToInt(), top)
     }
 }
 
 private fun hingeText(state: ClockFaceState): String {
     val angle = state.hingeAngleDegrees?.roundToInt()
     return if (angle != null) "hinge $angle°" else state.posture.label()
+}
+
+private fun DrawScope.drawAlignmentGrid() {
+    val sx = size.width / LensPair.REFERENCE_WIDTH
+    val sy = size.height / LensPair.REFERENCE_HEIGHT
+    val left = (CoverHoles.CUTOUT_LEFT - 50f) * sx
+    val top = (CoverHoles.CUTOUT_TOP - 50f) * sy
+    val right = size.width
+    val bottom = size.height
+    val paint = android.graphics.Paint().apply {
+        color = android.graphics.Color.BLACK
+        isAntiAlias = true
+        textSize = 18f * sy
+        typeface = android.graphics.Typeface.MONOSPACE
+    }
+    var x = 0f
+    while (x <= LensPair.REFERENCE_WIDTH) {
+        val px = x * sx
+        if (px in left..right) {
+            val major = x % 100f == 0f
+            drawLine(
+                Color.Black.copy(alpha = if (major) 0.35f else 0.16f),
+                Offset(px, top.coerceAtLeast(0f)),
+                Offset(px, bottom),
+                strokeWidth = if (major) 1.5f else 1f,
+            )
+            if (major) {
+                paint.alpha = 170
+                drawContext.canvas.nativeCanvas.drawText(
+                    x.toInt().toString(),
+                    px + 3f,
+                    (top + 16f * sy).coerceAtLeast(16f),
+                    paint,
+                )
+            }
+        }
+        x += 50f
+    }
+    var y = 0f
+    while (y <= LensPair.REFERENCE_HEIGHT) {
+        val py = y * sy
+        if (py in top..bottom) {
+            val major = y % 100f == 0f
+            drawLine(
+                Color.Black.copy(alpha = if (major) 0.35f else 0.16f),
+                Offset(left.coerceAtLeast(0f), py),
+                Offset(right, py),
+                strokeWidth = if (major) 1.5f else 1f,
+            )
+            if (major) {
+                paint.alpha = 170
+                drawContext.canvas.nativeCanvas.drawText(
+                    y.toInt().toString(),
+                    left.coerceAtLeast(2f),
+                    py - 3f,
+                    paint,
+                )
+            }
+        }
+        y += 50f
+    }
+}
+
+private fun DrawScope.drawBlackLensGuides(left: PlacedLens, right: PlacedLens) {
+    fun mark(lens: PlacedLens) {
+        drawCircle(Color.Black, radius = lens.radius, center = lens.center, style = Stroke(width = 2f))
+        val arm = 14f
+        drawLine(Color.Black, Offset(lens.center.x - arm, lens.center.y), Offset(lens.center.x + arm, lens.center.y), 2f)
+        drawLine(Color.Black, Offset(lens.center.x, lens.center.y - arm), Offset(lens.center.x, lens.center.y + arm), 2f)
+    }
+    mark(left)
+    mark(right)
 }
 
 private fun DrawScope.drawLensGuides(palette: com.coryblische.razrclock.theme.OmarchyPalette) {

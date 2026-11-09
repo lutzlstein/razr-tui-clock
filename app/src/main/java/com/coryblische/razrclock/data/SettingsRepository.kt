@@ -70,6 +70,7 @@ class SettingsRepository(context: Context) {
             prefs[Keys.LENS_BY] = next.lenses.by
             prefs[Keys.LENS_BR] = next.lenses.br
             prefs[Keys.REQUEST_CALIBRATION] = next.requestCalibration
+            prefs[Keys.LENS_ALIGN] = next.lensAlign
             prefs[Keys.SCHEMA] = LENS_SCHEMA
         }
     }
@@ -99,6 +100,7 @@ class SettingsRepository(context: Context) {
             LensPair()
         },
         requestCalibration = this[Keys.REQUEST_CALIBRATION] ?: false,
+        lensAlign = this[Keys.LENS_ALIGN] ?: true,
     )
 
     private object Keys {
@@ -120,6 +122,7 @@ class SettingsRepository(context: Context) {
         val LENS_BY = floatPreferencesKey("lens_by")
         val LENS_BR = floatPreferencesKey("lens_br")
         val REQUEST_CALIBRATION = booleanPreferencesKey("request_calibration")
+        val LENS_ALIGN = booleanPreferencesKey("lens_align")
         val SCHEMA = intPreferencesKey("lens_schema")
     }
 

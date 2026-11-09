@@ -80,6 +80,7 @@ fun SettingsScreen(
             onChange(prefs.copy(standOnlyWhileCharging = it))
         }
         ToggleRow("Temperature in °F", prefs.useFahrenheit) { onChange(prefs.copy(useFahrenheit = it)) }
+        ToggleRow("Lens alignment grid", prefs.lensAlign) { onChange(prefs.copy(lensAlign = it)) }
         ToggleRow("Use coarse location", prefs.useDeviceLocation) { checked ->
             if (checked) onRequestLocation() else onChange(prefs.copy(useDeviceLocation = false))
         }

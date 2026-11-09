@@ -6,6 +6,18 @@ import androidx.compose.ui.graphics.Color
 import com.coryblische.razrclock.RazrClockApp
 import java.io.File
 
+fun OmarchyPalette.onWhite(): OmarchyPalette = copy(
+    background = androidx.compose.ui.graphics.Color.White,
+    darkBackground = androidx.compose.ui.graphics.Color.White,
+    darkerBackground = androidx.compose.ui.graphics.Color.White,
+    lighterBackground = androidx.compose.ui.graphics.Color(0xFFE7D3CA),
+    foreground = androidx.compose.ui.graphics.Color(0xFF1A120E),
+    brightForeground = androidx.compose.ui.graphics.Color(0xFF120C09),
+    lightForeground = androidx.compose.ui.graphics.Color(0xFF2C1E18),
+    darkForeground = androidx.compose.ui.graphics.Color(0xFF3F2E28),
+    muted = androidx.compose.ui.graphics.Color(0xFF5C4E48),
+)
+
 data class OmarchyPalette(
     val accent: Color,
     val selection: Color,
