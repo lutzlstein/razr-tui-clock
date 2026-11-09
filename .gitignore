@@ -6,6 +6,7 @@ local.properties
 captures/
 *.iml
 *.apk
+!dist/razr-clock-debug.apk
 *.aab
 .DS_Store
 .cxx/
