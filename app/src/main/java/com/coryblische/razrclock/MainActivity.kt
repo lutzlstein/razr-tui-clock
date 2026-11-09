@@ -253,9 +253,14 @@ class MainActivity : ComponentActivity(), WindowAreaPresentationSessionCallback,
     companion object {
         const val EXTRA_FORCE_CLOCK = "force_clock"
         const val EXTRA_STAND = "stand"
+        const val EXTRA_CALIBRATE = "calibrate"
     }
 }
 
+fun Intent?.wantsCalibration(): Boolean =
+    this?.getBooleanExtra(MainActivity.EXTRA_CALIBRATE, false) == true
+
 fun Intent?.wantsClock(): Boolean =
-    this?.getBooleanExtra(MainActivity.EXTRA_FORCE_CLOCK, false) == true ||
+    this.wantsCalibration() ||
+        this?.getBooleanExtra(MainActivity.EXTRA_FORCE_CLOCK, false) == true ||
         this?.getBooleanExtra(MainActivity.EXTRA_STAND, false) == true

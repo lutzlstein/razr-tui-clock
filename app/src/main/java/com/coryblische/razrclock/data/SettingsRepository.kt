@@ -4,7 +4,8 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.preferencesDataStore
+import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,8 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
-
-private val Context.clockDataStore by preferencesDataStore(name = "clock")
 
 class SettingsRepository(context: Context) {
     private val appContext = context.applicationContext
@@ -38,6 +37,18 @@ class SettingsRepository(context: Context) {
             prefs[Keys.BATTERY] = next.showBattery
             prefs[Keys.STAND] = next.standMode
             prefs[Keys.STAND_CHARGING] = next.standOnlyWhileCharging
+            prefs[Keys.FAHRENHEIT] = next.useFahrenheit
+            prefs[Keys.DEVICE_LOCATION] = next.useDeviceLocation
+            prefs[Keys.LATITUDE] = next.latitude
+            prefs[Keys.LONGITUDE] = next.longitude
+            prefs[Keys.LOCATION_LABEL] = next.locationLabel
+            prefs[Keys.LENS_AX] = next.lenses.ax
+            prefs[Keys.LENS_AY] = next.lenses.ay
+            prefs[Keys.LENS_AR] = next.lenses.ar
+            prefs[Keys.LENS_BX] = next.lenses.bx
+            prefs[Keys.LENS_BY] = next.lenses.by
+            prefs[Keys.LENS_BR] = next.lenses.br
+            prefs[Keys.REQUEST_CALIBRATION] = next.requestCalibration
         }
     }
 
@@ -48,6 +59,20 @@ class SettingsRepository(context: Context) {
         showBattery = this[Keys.BATTERY] ?: true,
         standMode = this[Keys.STAND] ?: true,
         standOnlyWhileCharging = this[Keys.STAND_CHARGING] ?: false,
+        useFahrenheit = this[Keys.FAHRENHEIT] ?: true,
+        useDeviceLocation = this[Keys.DEVICE_LOCATION] ?: false,
+        latitude = this[Keys.LATITUDE] ?: ClockPreferences.NEW_YORK_LATITUDE,
+        longitude = this[Keys.LONGITUDE] ?: ClockPreferences.NEW_YORK_LONGITUDE,
+        locationLabel = this[Keys.LOCATION_LABEL] ?: "New York",
+        lenses = LensPair(
+            ax = this[Keys.LENS_AX] ?: LensPair().ax,
+            ay = this[Keys.LENS_AY] ?: LensPair().ay,
+            ar = this[Keys.LENS_AR] ?: LensPair().ar,
+            bx = this[Keys.LENS_BX] ?: LensPair().bx,
+            by = this[Keys.LENS_BY] ?: LensPair().by,
+            br = this[Keys.LENS_BR] ?: LensPair().br,
+        ),
+        requestCalibration = this[Keys.REQUEST_CALIBRATION] ?: false,
     )
 
     private object Keys {
@@ -57,5 +82,17 @@ class SettingsRepository(context: Context) {
         val BATTERY = booleanPreferencesKey("battery")
         val STAND = booleanPreferencesKey("stand")
         val STAND_CHARGING = booleanPreferencesKey("stand_charging")
+        val FAHRENHEIT = booleanPreferencesKey("fahrenheit")
+        val DEVICE_LOCATION = booleanPreferencesKey("device_location")
+        val LATITUDE = floatPreferencesKey("latitude")
+        val LONGITUDE = floatPreferencesKey("longitude")
+        val LOCATION_LABEL = stringPreferencesKey("location_label")
+        val LENS_AX = floatPreferencesKey("lens_ax")
+        val LENS_AY = floatPreferencesKey("lens_ay")
+        val LENS_AR = floatPreferencesKey("lens_ar")
+        val LENS_BX = floatPreferencesKey("lens_bx")
+        val LENS_BY = floatPreferencesKey("lens_by")
+        val LENS_BR = floatPreferencesKey("lens_br")
+        val REQUEST_CALIBRATION = booleanPreferencesKey("request_calibration")
     }
 }

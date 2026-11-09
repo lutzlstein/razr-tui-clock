@@ -1,19 +1,22 @@
 package com.coryblische.razrclock.ui
 
-import android.content.Context
-import android.content.ContextWrapper
-import android.view.DisplayCutout
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -22,57 +25,72 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.coryblische.razrclock.data.ClockFaceState
+import com.coryblische.razrclock.data.LensPair
 import com.coryblische.razrclock.data.accessibleClockLabel
 import com.coryblische.razrclock.data.formatDate
 import com.coryblische.razrclock.data.formatDayPeriod
 import com.coryblische.razrclock.data.formatHoursMinutes
 import com.coryblische.razrclock.data.formatSeconds
+import com.coryblische.razrclock.data.formatSysmon
+import com.coryblische.razrclock.data.formatWeatherLine
 import com.coryblische.razrclock.display.CoverGeometry
-import com.coryblische.razrclock.display.clockRegions
 import com.coryblische.razrclock.posture.BatteryStatus
 import com.coryblische.razrclock.posture.label
 import com.coryblische.razrclock.theme.LocalBitcount
+import com.coryblische.razrclock.theme.LocalMono
 import com.coryblische.razrclock.theme.LocalPalette
 import com.coryblische.razrclock.theme.RazrTheme
 import com.coryblische.razrclock.theme.terminalTextStyle
-import kotlinx.coroutines.delay
+import java.time.ZoneOffset
 import kotlin.math.roundToInt
 
-private const val PROMPT = "cory@razr ~ $ date"
+/**
+ * Motorola draws one icon row on the cover, not the whole corner.
+ * About 70px tall, left side only, around y 1120–1190 on a 1080×1272 panel.
+ */
+object CoverIconRow {
+    const val TOP = 1120f
+    const val BOTTOM = 1190f
+    const val RIGHT = 585f
+}
 
 @Composable
-fun ClockScreen(state: ClockFaceState, modifier: Modifier = Modifier) {
+fun ClockScreen(
+    state: ClockFaceState,
+    modifier: Modifier = Modifier,
+    calibrating: Boolean = false,
+    onLongPress: () -> Unit = {},
+    onLenses: (LensPair) -> Unit = {},
+    onCalibrationDone: () -> Unit = {},
+) {
     val palette = LocalPalette.current
-    val font = LocalBitcount.current
-    val density = LocalDensity.current
-    val cutout = rememberDisplayCutout()
-    var cursorOn by remember(state.cursorVisible) { mutableStateOf(state.cursorVisible) }
-    LaunchedEffect(state.cursorVisible) {
-        cursorOn = state.cursorVisible
-        if (!state.cursorVisible) return@LaunchedEffect
-        while (true) {
-            delay(530)
-            cursorOn = !cursorOn
-        }
-    }
+    val mono = LocalMono.current
+    val bitcount = LocalBitcount.current
+    var selected by remember { mutableIntStateOf(0) }
+    var working by remember(calibrating) { mutableStateOf(state.preferences.lenses) }
+    val lenses = if (calibrating) working else state.preferences.lenses
+    val epoch = state.now.toEpochSecond(ZoneOffset.UTC)
+    val fast = rememberSteppedDegrees(epoch, periodSeconds = 1, degreesPerStep = 15f)
+    val slow = rememberSteppedDegrees(epoch, periodSeconds = 15, degreesPerStep = 12f)
+    val colors = ringColors(palette)
+
     BoxWithConstraints(
         modifier
             .fillMaxSize()
@@ -81,99 +99,207 @@ fun ClockScreen(state: ClockFaceState, modifier: Modifier = Modifier) {
     ) {
         val widthPx = constraints.maxWidth.toFloat()
         val heightPx = constraints.maxHeight.toFloat()
-        val margin = with(density) { 16.dp.toPx() }
-        val promptHeight = with(density) { 46.dp.toPx() }
-        val avoid = CoverGeometry.avoidRect(widthPx, heightPx, cutout)
-        val regions = clockRegions(widthPx, heightPx, margin, promptHeight, avoid)
+        val cover = CoverGeometry.isCoverAspect(widthPx, heightPx)
+        val sx = widthPx / LensPair.REFERENCE_WIDTH
+        val sy = heightPx / LensPair.REFERENCE_HEIGHT
         Box(
             Modifier
                 .fillMaxSize()
                 .drawBehind {
-                    drawPath(regions.frame, palette.background)
-                    drawRect(
-                        color = palette.selection,
-                        topLeft = Offset(regions.prompt.left, regions.prompt.top),
-                        size = Size(regions.prompt.width, regions.prompt.height),
-                    )
-                    drawPath(
-                        regions.frame,
-                        palette.brown,
-                        style = Stroke(width = with(density) { 2.5.dp.toPx() }),
-                    )
+                    val a = lenses.place(0, size.width, size.height)
+                    val b = lenses.place(1, size.width, size.height)
+                    drawMazeRings(a, fast, colors, emphasized = calibrating && selected == 0)
+                    drawMazeRings(b, slow, colors, emphasized = calibrating && selected == 1)
+                    if (calibrating) {
+                        val mark = if (selected == 0) a else b
+                        drawCircle(palette.brightForeground, radius = 5f, center = mark.center)
+                        drawCircle(
+                            palette.accent,
+                            radius = mark.radius,
+                            center = mark.center,
+                            style = Stroke(width = 2f),
+                        )
+                    }
+                },
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 22.dp)
+                .padding(
+                    top = if (calibrating) 78.dp else 16.dp,
+                    // Cover: stop above the status block and the single Motorola icon row.
+                    bottom = if (cover) 168.dp else 12.dp,
+                )
+                .pointerInput(calibrating) {
+                    if (!calibrating) {
+                        detectTapGestures(onLongPress = { onLongPress() })
+                    }
                 },
         ) {
-            Box(Modifier.place(regions.prompt), contentAlignment = Alignment.CenterStart) {
-                PromptLine(
-                    fontSize = promptFontSize(regions.prompt.width, density),
-                    cursorOn = cursorOn,
+            if (!calibrating) {
+                Text(
+                    text = formatSysmon(state.downBytesPerSec, state.upBytesPerSec, ramPercent = null),
+                    style = terminalTextStyle(mono, 24.sp, palette.foreground, FontWeight.Bold),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            Box(Modifier.place(regions.upper), contentAlignment = Alignment.Center) {
-                TimeBlock(state)
+            if (state.preferences.showDate) {
+                Text(
+                    text = formatDate(state),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp),
+                    style = terminalTextStyle(mono, 28.sp, palette.lightForeground, FontWeight.Bold),
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                )
             }
-            Box(Modifier.place(regions.lower), contentAlignment = Alignment.BottomStart) {
-                StatusBlock(state)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    TimeBlock(state)
+                    WeatherRow(state)
+                }
             }
+            if (!cover) {
+                StatusColumn(state, Modifier.padding(top = 12.dp, bottom = 8.dp))
+            }
+        }
+        if (cover) {
+            val iconTop = CoverIconRow.TOP * sy
+            val iconBottom = CoverIconRow.BOTTOM * sy
+            val columnRight = CoverIconRow.RIGHT * sx - 16f
+            Box(
+                Modifier.placeAbs(
+                    left = 20f * sx,
+                    top = iconTop - 168f * sy,
+                    width = (columnRight - 20f * sx).coerceAtLeast(40f),
+                    height = 160f * sy,
+                ),
+                contentAlignment = Alignment.BottomStart,
+            ) {
+                StatusColumn(state, hingeLine = false)
+            }
+            Box(
+                Modifier.placeAbs(
+                    left = 20f * sx,
+                    top = iconBottom + 8f * sy,
+                    width = (columnRight - 20f * sx).coerceAtLeast(40f),
+                    height = (heightPx - iconBottom - 14f * sy).coerceAtLeast(20f),
+                ),
+                contentAlignment = Alignment.TopStart,
+            ) {
+                StatusColumn(state, batteryLines = false)
+            }
+        }
+        if (calibrating) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(selected, lenses) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            var next = lenses.moved(selected, pan.x / sx, pan.y / sy)
+                            if (zoom != 1f) next = next.scaledRadius(selected, zoom)
+                            working = next
+                            onLenses(next)
+                        }
+                    },
+            )
+            CalibrationBar(
+                selected = selected,
+                lenses = lenses,
+                onSelect = { selected = it },
+                onRadius = { delta ->
+                    val next = lenses.radiusDelta(selected, delta)
+                    working = next
+                    onLenses(next)
+                },
+                onReset = {
+                    working = LensPair()
+                    onLenses(LensPair())
+                },
+                onDone = onCalibrationDone,
+            )
         }
     }
 }
 
-private fun Modifier.place(rect: androidx.compose.ui.geometry.Rect): Modifier = layout { measurable, constraints ->
-    val width = rect.width.roundToInt().coerceAtLeast(1)
-    val height = rect.height.roundToInt().coerceAtLeast(1)
-    val placeable = measurable.measure(Constraints.fixed(width, height))
-    val parentW = if (constraints.hasBoundedWidth) constraints.maxWidth else width
-    val parentH = if (constraints.hasBoundedHeight) constraints.maxHeight else height
-    layout(parentW, parentH) {
-        placeable.place(rect.left.roundToInt(), rect.top.roundToInt())
+private fun Modifier.placeAbs(left: Float, top: Float, width: Float, height: Float): Modifier = layout { measurable, _ ->
+    val w = width.roundToInt().coerceAtLeast(1)
+    val h = height.roundToInt().coerceAtLeast(1)
+    val placeable = measurable.measure(Constraints.fixed(w, h))
+    layout(w, h) {
+        placeable.place(left.roundToInt(), top.roundToInt())
     }
 }
 
 @Composable
-private fun promptFontSize(widthPx: Float, density: androidx.compose.ui.unit.Density): TextUnit {
-    val glyphs = PROMPT.length + 1
-    val px = (widthPx / (glyphs * 0.62f)).coerceIn(
-        with(density) { 13.dp.toPx() },
-        with(density) { 26.dp.toPx() },
-    )
-    return with(density) { px.toSp() }
+private fun CalibrationBar(
+    selected: Int,
+    lenses: LensPair,
+    onSelect: (Int) -> Unit,
+    onRadius: (Float) -> Unit,
+    onReset: () -> Unit,
+    onDone: () -> Unit,
+) {
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(palette.background)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            CalButton("1", selected == 0, Modifier.weight(1f)) { onSelect(0) }
+            CalButton("2", selected == 1, Modifier.weight(1f)) { onSelect(1) }
+            CalButton("−", false, Modifier.weight(1f)) { onRadius(-4f) }
+            CalButton("+", false, Modifier.weight(1f)) { onRadius(4f) }
+            CalButton("reset", false, Modifier.weight(1.4f)) { onReset() }
+            CalButton("done", false, Modifier.weight(1.4f)) { onDone() }
+        }
+        Text(
+            text = "${selected + 1}  ${lenses.x(selected).roundToInt()},${lenses.y(selected).roundToInt()}  r${lenses.r(selected).roundToInt()}",
+            modifier = Modifier.padding(top = 4.dp, start = 6.dp),
+            style = terminalTextStyle(mono, 16.sp, palette.lightForeground, FontWeight.Bold),
+        )
+    }
 }
 
 @Composable
-private fun PromptLine(fontSize: TextUnit, cursorOn: Boolean) {
+private fun CalButton(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     val palette = LocalPalette.current
-    val font = LocalBitcount.current
-    Row(
-        modifier = Modifier.padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val mono = LocalMono.current
+    Box(
+        modifier
+            .height(52.dp)
+            .background(if (selected) palette.accent else palette.lighterBackground)
+            .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) },
+        contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.material3.Text(
-            text = buildAnnotatedString {
-                fun piece(text: String, color: androidx.compose.ui.graphics.Color) {
-                    withStyle(SpanStyle(color = color)) { append(text) }
-                }
-                piece("cory", palette.brightGreen)
-                piece("@", palette.muted)
-                piece("razr", palette.brightCyan)
-                piece(" ", palette.foreground)
-                piece("~", palette.brightYellow)
-                piece(" $ ", palette.foreground)
-                piece("date", palette.selectionForeground)
-            },
-            style = terminalTextStyle(font, fontSize, palette.foreground),
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Clip,
-        )
-        val cursorPx = with(LocalDensity.current) { fontSize.toPx() }
-        Box(
-            Modifier
-                .padding(start = 3.dp)
-                .size(
-                    width = with(LocalDensity.current) { (cursorPx * 0.55f).toDp() },
-                    height = with(LocalDensity.current) { (cursorPx * 0.72f).toDp() },
-                )
-                .background(if (cursorOn) palette.accent else palette.selection),
+        Text(
+            text = label,
+            style = terminalTextStyle(
+                mono,
+                18.sp,
+                if (selected) palette.darkerBackground else palette.foreground,
+                FontWeight.Bold,
+            ),
         )
     }
 }
@@ -181,74 +307,41 @@ private fun PromptLine(fontSize: TextUnit, cursorOn: Boolean) {
 @Composable
 private fun TimeBlock(state: ClockFaceState) {
     val palette = LocalPalette.current
-    val font = LocalBitcount.current
-    val density = LocalDensity.current
+    val bitcount = LocalBitcount.current
+    val mono = LocalMono.current
     val time = formatHoursMinutes(state)
     val seconds = formatSeconds(state)
     val period = formatDayPeriod(state)
-    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val maxW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
-        val maxH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
-        var timePx = maxW / (time.length * 0.60f)
-        val datePx = if (state.preferences.showDate) with(density) { 22.sp.toPx() } else 0f
-        val secondsPx = timePx * if (seconds != null) 0.36f else 0f
-        val periodExtra = if (period != null) timePx * 0.22f else 0f
-        val used = datePx + timePx * 0.78f + secondsPx + with(density) { 12.dp.toPx() }
-        if (used > maxH) timePx *= maxH / used
-        if (timePx * time.length * 0.60f + periodExtra > maxW) {
-            timePx = (maxW - periodExtra) / (time.length * 0.60f)
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = colorizedDigits(time, palette.brightForeground, palette.accent),
+                style = terminalTextStyle(bitcount, 108.sp, palette.brightForeground, FontWeight.W500),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+            )
+            if (period != null) {
+                Text(
+                    text = period,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 10.dp),
+                    style = terminalTextStyle(mono, 28.sp, palette.brightYellow, FontWeight.Bold),
+                )
+            }
         }
-        timePx = timePx.coerceIn(with(density) { 36.dp.toPx() }, with(density) { 220.dp.toPx() })
-        val timeSize = with(density) { timePx.toSp() }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (state.preferences.showDate) {
-                androidx.compose.material3.Text(
-                    text = formatDate(state),
-                    style = terminalTextStyle(font, 22.sp, palette.darkForeground),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                )
-            }
-            Row(verticalAlignment = Alignment.Bottom) {
-                androidx.compose.material3.Text(
-                    text = colorizedDigits(time, palette.brightForeground, palette.accent),
-                    style = terminalTextStyle(font, timeSize, palette.brightForeground, FontWeight.W500),
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    softWrap = false,
-                )
-                if (period != null) {
-                    androidx.compose.material3.Text(
-                        text = period,
-                        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp),
-                        style = terminalTextStyle(
-                            font,
-                            with(density) { (timePx * 0.28f).toSp() },
-                            palette.brightYellow,
-                            FontWeight.W500,
-                        ),
-                    )
-                }
-            }
-            if (seconds != null) {
-                androidx.compose.material3.Text(
-                    text = ":$seconds",
-                    style = terminalTextStyle(
-                        font,
-                        with(density) { (timePx * 0.36f).toSp() },
-                        palette.accent,
-                        FontWeight.W500,
-                    ),
-                )
-            }
+        if (seconds != null) {
+            Text(
+                text = ":$seconds",
+                style = terminalTextStyle(bitcount, 40.sp, palette.accent, FontWeight.W500),
+            )
         }
     }
 }
 
 private fun colorizedDigits(
     text: String,
-    digit: androidx.compose.ui.graphics.Color,
-    colon: androidx.compose.ui.graphics.Color,
+    digit: Color,
+    colon: Color,
 ) = buildAnnotatedString {
     text.forEach { ch ->
         withStyle(SpanStyle(color = if (ch == ':') colon else digit)) { append(ch) }
@@ -256,75 +349,111 @@ private fun colorizedDigits(
 }
 
 @Composable
-private fun StatusBlock(state: ClockFaceState) {
+private fun WeatherRow(state: ClockFaceState) {
     val palette = LocalPalette.current
-    val font = LocalBitcount.current
-    Column(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
-        if (state.preferences.showBattery) {
-            val percentColor = when {
-                state.batteryPercent in 0..15 && state.batteryStatus != BatteryStatus.CHARGING -> palette.brightRed
-                else -> palette.brightForeground
+    val mono = LocalMono.current
+    val weather = state.weather
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        WeatherGlyph(weather?.code, Modifier.padding(end = 8.dp).size(28.dp))
+        Text(
+            text = weather?.let { formatWeatherLine(it, state.preferences.useFahrenheit) } ?: "weather --",
+            style = terminalTextStyle(
+                mono,
+                22.sp,
+                if (weather?.stale == true) palette.brightYellow else palette.foreground,
+                FontWeight.Bold,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun WeatherGlyph(code: Int?, modifier: Modifier = Modifier) {
+    val palette = LocalPalette.current
+    Box(
+        modifier.drawBehind {
+            val c = Offset(size.width / 2f, size.height / 2f)
+            val r = size.minDimension / 2f
+            when (code) {
+                null -> drawLine(palette.darkForeground, Offset(r * 0.4f, c.y), Offset(size.width - r * 0.4f, c.y), 3f)
+                0, 1 -> {
+                    drawCircle(palette.brightYellow, r * 0.45f, c)
+                }
+                2, 3, 45, 48 -> drawCircle(palette.darkForeground, r * 0.55f, c, style = Stroke(3f))
+                71, 73, 75, 77, 85, 86 -> drawCircle(palette.brightForeground, r * 0.28f, c)
+                95, 96, 99 -> drawLine(palette.brightYellow, Offset(c.x, r * 0.2f), Offset(c.x - r * 0.25f, size.height), 3f)
+                else -> drawLine(palette.brightCyan, Offset(c.x, r * 0.15f), Offset(c.x, size.height * 0.85f), 3f)
             }
-            val statusColor = when (state.batteryStatus) {
-                BatteryStatus.CHARGING, BatteryStatus.FULL -> palette.brightGreen
-                BatteryStatus.DISCHARGING -> palette.darkForeground
-                BatteryStatus.UNKNOWN -> palette.muted
-            }
-            val statusWord = when (state.batteryStatus) {
+        },
+    )
+}
+
+@Composable
+private fun StatusColumn(
+    state: ClockFaceState,
+    modifier: Modifier = Modifier,
+    batteryLines: Boolean = true,
+    hingeLine: Boolean = true,
+) {
+    val palette = LocalPalette.current
+    val mono = LocalMono.current
+    Column(modifier) {
+        if (batteryLines && state.preferences.showBattery) {
+            val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
+            val charging = when (state.batteryStatus) {
                 BatteryStatus.CHARGING -> "charging"
                 BatteryStatus.FULL -> "full"
                 BatteryStatus.DISCHARGING -> "discharging"
                 BatteryStatus.UNKNOWN -> "unknown"
             }
-            val percent = if (state.batteryPercent < 0) "--" else "${state.batteryPercent}%"
-            androidx.compose.material3.Text(
-                text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = palette.muted)) { append("bat  ") }
-                    withStyle(SpanStyle(color = percentColor)) { append(percent) }
-                },
-                style = terminalTextStyle(font, 18.sp, palette.foreground),
+            val chargingColor = when (state.batteryStatus) {
+                BatteryStatus.CHARGING, BatteryStatus.FULL -> palette.brightGreen
+                else -> palette.foreground
+            }
+            Text(
+                text = "bat  $percent",
+                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
                 maxLines = 1,
             )
-            androidx.compose.material3.Text(
-                text = statusWord,
-                style = terminalTextStyle(font, 18.sp, statusColor),
+            Text(
+                text = charging,
+                style = terminalTextStyle(mono, 22.sp, chargingColor, FontWeight.Bold),
                 maxLines = 1,
             )
+            state.ramPercent?.let { ram ->
+                Text(
+                    text = "ram  $ram%",
+                    style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
+                    maxLines = 1,
+                )
+            }
         }
-        val angle = state.hingeAngleDegrees
-        if (angle != null || state.posture != com.coryblische.razrclock.posture.DevicePosture.UNKNOWN) {
-            val hinge = if (angle != null) "hinge ${angle.roundToInt()}°" else "hinge"
-            androidx.compose.material3.Text(
+        if (hingeLine) {
+            val angle = state.hingeAngleDegrees?.roundToInt()
+            val hinge = if (angle != null) "hinge $angle°" else state.posture.label()
+            Text(
                 text = buildAnnotatedString {
-                    withStyle(SpanStyle(color = palette.muted)) { append(hinge) }
-                    append("  ")
-                    withStyle(SpanStyle(color = palette.darkForeground)) { append(state.posture.label()) }
+                    withStyle(SpanStyle(color = palette.foreground)) { append(hinge) }
+                    if (state.standActive) {
+                        withStyle(SpanStyle(color = palette.brightMagenta)) { append("  stand") }
+                    } else {
+                        withStyle(SpanStyle(color = palette.foreground)) { append("  ${state.posture.label()}") }
+                    }
                 },
-                style = terminalTextStyle(font, 18.sp, palette.darkForeground),
+                style = terminalTextStyle(mono, 22.sp, palette.foreground, FontWeight.Bold),
                 maxLines = 1,
-            )
-        }
-        if (state.standActive) {
-            androidx.compose.material3.Text(
-                text = "stand",
-                style = terminalTextStyle(font, 18.sp, palette.brightMagenta, FontWeight.W500),
-                maxLines = 1,
+                softWrap = false,
             )
         }
     }
-}
-
-@Composable
-private fun rememberDisplayCutout(): DisplayCutout? {
-    val context = LocalContext.current
-    return remember(context) { context.findDisplayCutout() }
-}
-
-private fun Context.findDisplayCutout(): DisplayCutout? {
-    runCatching { display?.cutout }.getOrNull()?.let { return it }
-    val base = (this as? ContextWrapper)?.baseContext ?: return null
-    if (base === this) return null
-    return base.findDisplayCutout()
 }
 
 @Preview(name = "Cover 1080x1272 at 360dpi", widthDp = 480, heightDp = 565, showBackground = true, backgroundColor = 0xFF070301)

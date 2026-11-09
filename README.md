@@ -1,10 +1,10 @@
 # razr-tui-clock
 
-Terminal-style clock for the external cover of a Motorola Razr Ultra 2025 (codename leap, XT2551, Android 16). The face is a TUI: box frame, `cory@razr ~ $ date`, a blinking block cursor, and optional seconds, date, and battery. The default palette is Omarchy's Maine Autumn Sunset. The type is [Bitcount Grid Double](https://fonts.google.com/specimen/Bitcount+Grid+Double) (SIL OFL), bundled in the APK.
+Terminal-style clock for the external cover of a Motorola Razr Ultra 2025 (codename leap, XT2551, Android 16). Big digits are Bitcount Grid Double. Everything else is JetBrains Mono Bold. The top line is network down/up (and the bottom-left keeps battery, hinge, and weather around Motorola's one icon row). The default palette is Omarchy's Maine Autumn Sunset. Both fonts are SIL OFL and bundled in the APK.
 
 ![Cover clock, 1080x1272 at 360 dpi](app/src/test/snapshots/images/com.coryblische.razrclock_CoverClockSnapshotTest_coverClock.png)
 
-The frame stops at the cover's camera cutout, bounding rect `(585,923)-(1080,1272)`.
+The camera cutout is `(585,923)-(1080,1272)`. Maze rings sit around the two side-by-side lenses there. There is no border tracing the notch. Motorola's cover icons are a single row around y 1120–1190 on the left; status text sits above and below that row.
 
 ## Build
 
@@ -33,7 +33,7 @@ Open the app once on the inner display. That arms stand mode (a low-priority ong
 
 ## Cover screen: try this first
 
-Display 1 is `1080x1272`, density 360, `FLAG_PRESENTATION | FLAG_OWN_CONTENT_ONLY | FLAG_OWN_DISPLAY_GROUP`, and `canHostTasks=false`. A normal `am start --display 1` or `ActivityOptions.setLaunchDisplayId(1)` is rejected while that flag stays false. Motorola's privileged cover launcher (`com.motorola.launcher.secondarydisplay`) is what actually places a third-party activity on that display, and only after you allow the app.
+Display 1 is `1080x1272`, density 360, with `FLAG_PRESENTATION`, `FLAG_OWN_CONTENT_ONLY`, and `FLAG_OWN_DISPLAY_GROUP`. `canHostTasks` is a hidden API; this app does not reflect it. `ActivityOptions.setLaunchDisplayId` is attempted and the exception is reported if the display rejects the task. Motorola's privileged cover launcher (`com.motorola.launcher.secondarydisplay`) is what actually places a third-party activity on that display, and only after you allow the app.
 
 This app does **not** set Motorola's `cli_display_opt_out` meta-data. The launcher activity is resizeable and switches to the clock when it is on a non-default display or on a window with the cover's aspect (~0.85, 1080×1272).
 
@@ -49,7 +49,7 @@ Expected failure if you skip the allow step:
 adb shell am start --display 1 -n com.coryblische.razrclock/.MainActivity
 ```
 
-That launch uses the same `setLaunchDisplayId` path the app tries only when `Display.canHostTasks()` is not false. On the dumpsys you captured, it should fail.
+That is the same `setLaunchDisplayId` call the app makes. If the cover is not allowed to host the task, the command fails and the app logs the exception.
 
 ## What the app also tries
 
@@ -57,7 +57,7 @@ When stand mode is on and the phone is half-open (tent or stand), the app tries,
 
 1. **Jetpack WindowManager rear display.** If a `TYPE_REAR_FACING` area reports `PRESENT` as available, the resumed activity calls `presentContentOnWindowArea` and draws the clock into that session. **Move activity to rear display** calls `transferActivityToWindowArea` instead. That one can show a system confirmation. Many Motorola builds never publish this window area. The settings diagnostics line says so when it is missing.
 2. **`android.app.Presentation` on the secondary `FLAG_PRESENTATION` display** (display 1), from the stand-mode foreground service. Android 16 allows presentations on internal displays that carry that flag. The system still throws `InvalidDisplayException` if the presentation would cover this app's own task, or if the process is not allowed to add a window there. Failures are caught and written to the diagnostics line. **Show on cover display now** runs this immediately so you can see the error without folding the phone.
-3. **`ActivityOptions.setLaunchDisplayId`**, only when reflected `canHostTasks()` is not `false`. A `false` result is not attempted.
+3. **`ActivityOptions.setLaunchDisplayId`**, with no hidden-API preflight. A rejection is caught and shown in diagnostics.
 4. **A full-screen-intent notification** that brings `MainActivity` forward on whichever display the system will actually host a task on. On Android 14+ that special access is not granted to a normal app until you allow it. Settings has a button, or:
 
    ```bash
@@ -107,9 +107,17 @@ adb shell am start -n com.coryblische.razrclock/.MainActivity
 
 Keys: `accent`, `selection`, `selection_foreground`, `muted`, `background`, `dark_background`, `darker_background`, `lighter_background`, `foreground`, `dark_foreground`, `light_foreground`, `bright_foreground`, `red`, `yellow`, `orange`, `green`, `cyan`, `blue`, `magenta`, `brown`, `bright_red`, `bright_yellow`, `bright_green`, `bright_cyan`, `bright_blue`, `bright_magenta`.
 
-## Font
+## Fonts
 
-`app/src/main/res/font/bitcount_grid_double.ttf` is the variable **Bitcount Grid Double** file (`wght`, `ELXP`, `ELSH`, `slnt`, `CRSV`). The license is `app/src/main/assets/fonts/OFL.txt`. The instance used here is weight 400–500, `ELXP` 8, `ELSH` 0, `slnt` 0, `CRSV` 0: square pixels, upright, not cursive, only slightly expanded, so the double stroke stays readable at cover size on OLED instead of filling in. Bitcount has no box-drawing block, so the frame and the cursor are drawn, not typed.
+Clock digits and seconds: `app/src/main/res/font/bitcount_grid_double.ttf` (Bitcount Grid Double, OFL in `app/src/main/assets/fonts/OFL.txt`). Weight stays near 400–500 with `ELXP` 8 so the double stroke stays open on OLED.
+
+Every other line: `app/src/main/res/font/jetbrains_mono_bold.ttf` (JetBrains Mono Bold, OFL in `app/src/main/assets/fonts/JetBrainsMono-OFL.txt`).
+
+## Lenses, weather, network
+
+Lens rings are a circular reading of the Omarchy mark: nested arcs, gaps, and right-angle end ticks. Lens 1 steps every second, lens 2 every 15 seconds, each step eased rather than spun. Default centers are a side-by-side guess inside the cutout (`760,1100 r70` and `970,1100 r62` on the 1080×1272 grid). Long-press the clock on the cover, or use **Calibrate lenses on cover** in settings, then drag the selected ring, pinch or use +/−, and tap done. Values persist in DataStore.
+
+Weather is Open-Meteo, no key, America/New_York for the daily high/low. Default place is New York, °F. Coarse location is optional. The last result is cached and marked `stale` when the refresh fails or is older than 35 minutes. The top line is `TrafficStats` down/up, sampled once a second.
 
 ## What is uncertain on the real phone
 

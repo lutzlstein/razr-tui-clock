@@ -14,9 +14,11 @@ import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.coryblische.razrclock.ui.rememberBitcount
+import com.coryblische.razrclock.ui.rememberJetBrainsMono
 
 val LocalPalette = staticCompositionLocalOf { OmarchyPalette.MaineAutumnSunset }
 val LocalBitcount = staticCompositionLocalOf<FontFamily> { FontFamily.Monospace }
+val LocalMono = staticCompositionLocalOf<FontFamily> { FontFamily.Monospace }
 
 fun terminalTextStyle(
     font: FontFamily,
@@ -42,6 +44,7 @@ fun RazrTheme(
     content: @Composable () -> Unit,
 ) {
     val bitcount = rememberBitcount()
+    val mono = rememberJetBrainsMono()
     val scheme = darkColorScheme(
         primary = palette.accent,
         onPrimary = palette.darkerBackground,
@@ -58,14 +61,18 @@ fun RazrTheme(
         onError = palette.darkerBackground,
     )
     val type = Typography(
-        bodyLarge = terminalTextStyle(bitcount, 18.sp, palette.foreground),
-        bodyMedium = terminalTextStyle(bitcount, 15.sp, palette.foreground),
-        bodySmall = terminalTextStyle(bitcount, 13.sp, palette.darkForeground),
-        titleLarge = terminalTextStyle(bitcount, 28.sp, palette.brightForeground, FontWeight.W500),
-        titleMedium = terminalTextStyle(bitcount, 20.sp, palette.foreground, FontWeight.W500),
-        labelLarge = terminalTextStyle(bitcount, 16.sp, palette.darkerBackground, FontWeight.W500),
+        bodyLarge = terminalTextStyle(mono, 18.sp, palette.foreground, FontWeight.Bold),
+        bodyMedium = terminalTextStyle(mono, 16.sp, palette.foreground, FontWeight.Bold),
+        bodySmall = terminalTextStyle(mono, 14.sp, palette.darkForeground, FontWeight.Bold),
+        titleLarge = terminalTextStyle(mono, 28.sp, palette.brightForeground, FontWeight.Bold),
+        titleMedium = terminalTextStyle(mono, 20.sp, palette.foreground, FontWeight.Bold),
+        labelLarge = terminalTextStyle(mono, 16.sp, palette.darkerBackground, FontWeight.Bold),
     )
-    CompositionLocalProvider(LocalPalette provides palette, LocalBitcount provides bitcount) {
+    CompositionLocalProvider(
+        LocalPalette provides palette,
+        LocalBitcount provides bitcount,
+        LocalMono provides mono,
+    ) {
         MaterialTheme(colorScheme = scheme, typography = type, content = content)
     }
 }

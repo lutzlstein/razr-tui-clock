@@ -109,9 +109,8 @@ class StandModeService : Service() {
                 if (!app.rearSessionActive) {
                     app.cover.ensurePresentation(this@StandModeService, latest)
                 }
-                val step = if (latest.preferences.showSeconds) 1000L else 60_000L
-                val wait = step - (System.currentTimeMillis() % step)
-                delay(wait.coerceIn(200L, step))
+                val wait = 1_000L - (System.currentTimeMillis() % 1_000L)
+                delay(wait.coerceIn(200L, 1_000L))
             }
         }
     }

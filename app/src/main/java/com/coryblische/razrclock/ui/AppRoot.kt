@@ -1,11 +1,14 @@
 package com.coryblische.razrclock.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,12 +28,15 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.coryblische.razrclock.MainActivity
 import com.coryblische.razrclock.RazrClockApp
 import com.coryblische.razrclock.data.ClockFaceState
+import com.coryblische.razrclock.data.LensPair
 import com.coryblische.razrclock.display.applyDeskWindow
 import com.coryblische.razrclock.posture.PostureRules
 import com.coryblische.razrclock.posture.label
 import com.coryblische.razrclock.stand.StandModeService
 import com.coryblische.razrclock.theme.RazrTheme
+import com.coryblische.razrclock.wantsCalibration
 import com.coryblische.razrclock.wantsClock
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
@@ -43,15 +49,23 @@ fun AppRoot(activity: MainActivity) {
     val battery by app.batteryMonitor.state.collectAsState()
     val report by app.cover.report.collectAsState()
     val opens by activity.openRequests.collectAsState()
+    val rates by app.systemMonitor.rates.collectAsState()
+    val ram by app.systemMonitor.ramPercent.collectAsState()
+    val weather by app.weather.current.collectAsState()
     val scope = rememberCoroutineScope()
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        scope.launch { app.settings.update { it.copy(useDeviceLocation = granted) } }
+    }
+    var lensWrite by remember { mutableStateOf<Job?>(null) }
 
     var now by remember { mutableStateOf(LocalDateTime.now()) }
-    LaunchedEffect(prefs.showSeconds) {
+    LaunchedEffect(Unit) {
         while (true) {
             now = LocalDateTime.now()
-            val step = if (prefs.showSeconds) 1_000L else 60_000L
-            val wait = step - (System.currentTimeMillis() % step)
-            delay(wait.coerceIn(200L, step))
+            val wait = 1_000L - (System.currentTimeMillis() % 1_000L)
+            delay(wait.coerceIn(200L, 1_000L))
         }
     }
 
@@ -69,6 +83,10 @@ fun AppRoot(activity: MainActivity) {
         posture = posture.posture,
         hingeAngleDegrees = posture.hingeAngle,
         standActive = standActive,
+        downBytesPerSec = rates.downBytesPerSec,
+        upBytesPerSec = rates.upBytesPerSec,
+        ramPercent = ram,
+        weather = weather,
     )
     SideEffect { activity.renderRear(clock) }
 
@@ -84,10 +102,35 @@ fun AppRoot(activity: MainActivity) {
     var screen by rememberSaveable {
         mutableStateOf(if (onCover || activity.intent.wantsClock()) SCREEN_CLOCK else SCREEN_SETTINGS)
     }
+    var calibrating by rememberSaveable { mutableStateOf(false) }
     var seenStand by rememberSaveable { mutableStateOf(false) }
+    var handledCalibrateIntent by rememberSaveable { mutableStateOf(false) }
+
+    fun openCoverCalibration() {
+        scope.launch {
+            app.settings.update { it.copy(requestCalibration = true) }
+            val display = app.cover.preferredCover()
+            if (display != null) {
+                app.cover.launchOnDisplay(activity, display, calibrate = true)
+            } else {
+                app.cover.note("Open the clock on the cover, then long-press it.")
+            }
+        }
+    }
 
     LaunchedEffect(opens) {
         if (activity.intent.wantsClock()) screen = SCREEN_CLOCK
+    }
+    LaunchedEffect(onCover, prefs.requestCalibration, opens) {
+        val fromIntent = activity.intent.wantsCalibration() && !handledCalibrateIntent
+        if (onCover && (prefs.requestCalibration || fromIntent)) {
+            screen = SCREEN_CLOCK
+            calibrating = true
+            handledCalibrateIntent = true
+            if (prefs.requestCalibration) {
+                scope.launch { app.settings.update { it.copy(requestCalibration = false) } }
+            }
+        }
     }
     LaunchedEffect(onCover) {
         if (onCover) screen = SCREEN_CLOCK
@@ -141,7 +184,29 @@ fun AppRoot(activity: MainActivity) {
 
     RazrTheme(palette = app.loadedPalette.palette) {
         if (screen == SCREEN_CLOCK) {
-            ClockScreen(state = clock)
+            ClockScreen(
+                state = clock,
+                calibrating = calibrating && onCover,
+                onLongPress = {
+                    if (onCover) {
+                        calibrating = true
+                    } else {
+                        openCoverCalibration()
+                    }
+                },
+                onLenses = { pair: LensPair ->
+                    lensWrite?.cancel()
+                    lensWrite = scope.launch {
+                        delay(40)
+                        app.settings.update { it.copy(lenses = pair) }
+                    }
+                },
+                onCalibrationDone = {
+                    calibrating = false
+                    activity.intent.putExtra(MainActivity.EXTRA_CALIBRATE, false)
+                    scope.launch { app.settings.update { it.copy(requestCalibration = false) } }
+                },
+            )
         } else {
             SettingsScreen(
                 prefs = prefs,
@@ -182,6 +247,10 @@ fun AppRoot(activity: MainActivity) {
                             .putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName),
                         "Notification settings are not available.",
                     )
+                },
+                onCalibrate = { openCoverCalibration() },
+                onRequestLocation = {
+                    locationPermission.launch(Manifest.permission.ACCESS_COARSE_LOCATION)
                 },
             )
         }

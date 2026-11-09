@@ -7,8 +7,10 @@ import com.coryblische.razrclock.display.CoverDisplayController
 import com.coryblische.razrclock.posture.BatteryRepository
 import com.coryblische.razrclock.posture.PostureRepository
 import com.coryblische.razrclock.posture.PostureRules
+import com.coryblische.razrclock.sys.SystemMonitor
 import com.coryblische.razrclock.theme.LoadedPalette
 import com.coryblische.razrclock.theme.loadPalette
+import com.coryblische.razrclock.weather.WeatherRepository
 import java.time.LocalDateTime
 
 class RazrClockApp : Application() {
@@ -22,6 +24,10 @@ class RazrClockApp : Application() {
         private set
     lateinit var loadedPalette: LoadedPalette
         private set
+    lateinit var systemMonitor: SystemMonitor
+        private set
+    lateinit var weather: WeatherRepository
+        private set
 
     @Volatile var mainResumed: Boolean = false
     @Volatile var rearSessionActive: Boolean = false
@@ -33,12 +39,16 @@ class RazrClockApp : Application() {
         batteryMonitor = BatteryRepository(this)
         loadedPalette = loadPalette(this)
         cover = CoverDisplayController(this, loadedPalette.palette)
+        systemMonitor = SystemMonitor(this).also { it.start() }
+        weather = WeatherRepository(this, settings).also { it.start() }
     }
 
     fun face(now: LocalDateTime = LocalDateTime.now()): ClockFaceState {
         val prefs = settings.preferences.value
         val posture = postureMonitor.snapshot.value
         val battery = batteryMonitor.state.value
+        val rates = systemMonitor.rates.value
+        val weatherNow = weather.current.value
         val stand = PostureRules.shouldTakeOver(
             posture = posture.posture,
             standEnabled = prefs.standMode,
@@ -53,6 +63,10 @@ class RazrClockApp : Application() {
             posture = posture.posture,
             hingeAngleDegrees = posture.hingeAngle,
             standActive = stand,
+            downBytesPerSec = rates.downBytesPerSec,
+            upBytesPerSec = rates.upBytesPerSec,
+            ramPercent = systemMonitor.ramPercent.value,
+            weather = weatherNow,
         )
     }
 

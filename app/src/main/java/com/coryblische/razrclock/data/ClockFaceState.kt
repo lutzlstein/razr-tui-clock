@@ -13,6 +13,10 @@ data class ClockFaceState(
     val hingeAngleDegrees: Float?,
     val cursorVisible: Boolean = true,
     val standActive: Boolean = false,
+    val downBytesPerSec: Double = 1_200_000.0,
+    val upBytesPerSec: Double = 48_000.0,
+    val ramPercent: Int? = 62,
+    val weather: WeatherNow? = WeatherNow.sample(),
 ) {
     companion object {
         fun sample(): ClockFaceState = ClockFaceState(

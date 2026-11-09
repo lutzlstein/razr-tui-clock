@@ -17,16 +17,16 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Ways onto the Razr cover, which adb reports as display 1 with
- * FLAG_PRESENTATION and canHostTasks=false.
+ * FLAG_PRESENTATION. canHostTasks is a hidden API and is not queried.
  *
  * 1. A Presentation on that display. This is the API the presentation flag is for.
  *    Android 16 allows it on internal displays, then rejects it if it would cover
  *    the app's own task or if the app is not allowed to use the display.
- * 2. ActivityOptions.setLaunchDisplayId, only when canHostTasks is not false.
- *    A false result is not attempted: the system rejects the launch.
+ * 2. ActivityOptions.setLaunchDisplayId. The public call either works or throws;
+ *    there is no preflight. Motorola's "Allow on external display" setting is
+ *    what actually makes the cover host the task.
  * 3. A full-screen intent that brings [MainActivity] forward on whichever display
- *    the system will actually put a task on. Motorola's "Allow on external display"
- *    setting is what makes that the cover.
+ *    the system will actually put a task on.
  */
 class CoverDisplayController(
     context: Context,
@@ -96,19 +96,12 @@ class CoverDisplayController(
         presentFailures = 0
     }
 
-    fun launchOnDisplay(context: Context, display: Display): Result<Unit> {
-        val hostsTasks = canHostTasks(display)
-        if (hostsTasks == false) {
-            val message = "display ${display.displayId} canHostTasks=false; skipped setLaunchDisplayId."
-            _report.value = message
-            Log.i(RazrClockApp.TAG, message)
-            return Result.failure(IllegalStateException(message))
-        }
+    fun launchOnDisplay(context: Context, display: Display, calibrate: Boolean = false): Result<Unit> {
         return runCatching {
-            val intent = clockIntent(context)
+            val intent = clockIntent(context, calibrate)
             val options = ActivityOptions.makeBasic().apply { launchDisplayId = display.displayId }
             context.startActivity(intent, options.toBundle())
-            _report.value = "startActivity on display ${display.displayId} (canHostTasks=$hostsTasks)."
+            _report.value = "startActivity on display ${display.displayId}."
             Log.i(RazrClockApp.TAG, _report.value)
             Unit
         }.onFailure { error ->
@@ -118,10 +111,11 @@ class CoverDisplayController(
         }
     }
 
-    fun clockIntent(context: Context): Intent = Intent(context, MainActivity::class.java).apply {
+    fun clockIntent(context: Context, calibrate: Boolean = false): Intent = Intent(context, MainActivity::class.java).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         putExtra(MainActivity.EXTRA_FORCE_CLOCK, true)
         putExtra(MainActivity.EXTRA_STAND, true)
+        if (calibrate) putExtra(MainActivity.EXTRA_CALIBRATE, true)
     }
 
     fun describe(context: Context): String {
@@ -135,10 +129,9 @@ class CoverDisplayController(
             val cutout = display.cutout?.boundingRects?.joinToString { rect ->
                 "(${rect.left},${rect.top})-(${rect.right},${rect.bottom})"
             } ?: "none"
-            val hosts = canHostTasks(display)
             "id=${display.displayId} ${mode.physicalWidth}x${mode.physicalHeight} dpi=$dpi " +
                 "flags=0x${display.flags.toString(16)} (${flagNames(display.flags)}) " +
-                "canHostTasks=$hosts cutout=$cutout name=${display.name}"
+                "cutout=$cutout name=${display.name}"
         }
     }
 
@@ -146,15 +139,6 @@ class CoverDisplayController(
         display.flags and Display.FLAG_PRESENTATION != 0
 
     companion object {
-        fun canHostTasks(display: Display): Boolean? {
-            val method = runCatching { Display::class.java.getMethod("canHostTasks") }.getOrNull()
-                ?: runCatching {
-                    Display::class.java.getDeclaredMethod("canHostTasks").apply { isAccessible = true }
-                }.getOrNull()
-                ?: return null
-            return runCatching { method.invoke(display) as Boolean }.getOrNull()
-        }
-
         fun flagNames(flags: Int): String {
             val names = buildList {
                 if (flags and Display.FLAG_SUPPORTS_PROTECTED_BUFFERS != 0) add("PROTECTED_BUFFERS")
