@@ -21,6 +21,7 @@ data class ClockFaceState(
     val handActive: Boolean = false,
     val coverView: CoverView = CoverView.CLOCK,
     val handSpin: Int = 0,
+    val gearLit: Boolean = false,
 ) {
     companion object {
         fun sample(): ClockFaceState = ClockFaceState(

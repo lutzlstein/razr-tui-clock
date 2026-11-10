@@ -8,6 +8,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
@@ -49,6 +51,13 @@ class HandPresence(context: Context) {
     private val pulsed = HashSet<Int>()
     private var idleJob: Job? = null
     private var brightJob: Job? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var flashUntil = 0L
+    private val clearFlash = Runnable {
+        if (SystemClock.elapsedRealtime() >= flashUntil) {
+            _cue.value = _cue.value.copy(flash = false)
+        }
+    }
 
     init {
         Log.i(RazrClockApp.TAG, "Sensors:\n${_cue.value.available}")
@@ -60,11 +69,17 @@ class HandPresence(context: Context) {
             val now = SystemClock.elapsedRealtime()
             when (roles[event.sensor.id]) {
                 SensorRole.CYCLE -> {
-                    if (rising(event.sensor.id, value)) publish(logic.onCycle(now))
+                    if (rising(event.sensor.id, value)) {
+                        publish(logic.onCycle(now))
+                        flash()
+                    }
                     return
                 }
                 SensorRole.WAKE -> {
-                    if (rising(event.sensor.id, value)) publish(logic.onWake(now))
+                    if (rising(event.sensor.id, value)) {
+                        publish(logic.onWake(now))
+                        flash()
+                    }
                     return
                 }
                 SensorRole.APPROACH, null -> Unit
@@ -75,7 +90,13 @@ class HandPresence(context: Context) {
             if (was == near) return
             nearBySensor[id] = near
             val anyNear = nearBySensor.values.any { it }
-            if (anyNear) publish(logic.onNear(now)) else publish(logic.onFar(now))
+            val wasNear = logic.state.near
+            if (anyNear) {
+                publish(logic.onNear(now))
+                if (!wasNear) flash()
+            } else {
+                publish(logic.onFar(now))
+            }
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -98,6 +119,7 @@ class HandPresence(context: Context) {
         if (!on) {
             idleJob?.cancel()
             brightJob?.cancel()
+            mainHandler.removeCallbacks(clearFlash)
             reconcile()
             val next = logic.asleep()
             _cue.value = _cue.value.copy(
@@ -106,6 +128,7 @@ class HandPresence(context: Context) {
                 view = next.view,
                 spin = next.spin,
                 brightness = IDLE_BRIGHTNESS,
+                flash = false,
             )
             return
         }
@@ -193,9 +216,23 @@ class HandPresence(context: Context) {
         pulsed.clear()
         idleJob?.cancel()
         brightJob?.cancel()
+        mainHandler.removeCallbacks(clearFlash)
         val next = logic.asleep()
-        _cue.value = _cue.value.copy(active = next.active, view = next.view, spin = next.spin, brightness = IDLE_BRIGHTNESS)
+        _cue.value = _cue.value.copy(
+            active = next.active,
+            view = next.view,
+            spin = next.spin,
+            brightness = IDLE_BRIGHTNESS,
+            flash = false,
+        )
         Log.i(RazrClockApp.TAG, "Hand presence listeners stopped")
+    }
+
+    private fun flash() {
+        flashUntil = SystemClock.elapsedRealtime() + FLASH_MS
+        _cue.value = _cue.value.copy(flash = true)
+        mainHandler.removeCallbacks(clearFlash)
+        mainHandler.postAtTime(clearFlash, SystemClock.uptimeMillis() + FLASH_MS)
     }
 
     private fun publish(next: PresenceLogic.State) {
@@ -306,6 +343,7 @@ class HandPresence(context: Context) {
     companion object {
         const val IDLE_BRIGHTNESS = 0.12f
         const val AWAKE_BRIGHTNESS = 1f
+        const val FLASH_MS = 50L
 
         private val COVER_HINTS = listOf("cli", "cover", "external", "approach", "fip", "flip", "secondary", "rear", "outer")
         private val BLOCKED_TYPES = setOf(
@@ -332,6 +370,7 @@ data class HandCue(
     val view: CoverView = CoverView.CLOCK,
     val spin: Int = 0,
     val brightness: Float = HandPresence.IDLE_BRIGHTNESS,
+    val flash: Boolean = false,
     val using: String = "not listening",
     val available: String = "",
 )

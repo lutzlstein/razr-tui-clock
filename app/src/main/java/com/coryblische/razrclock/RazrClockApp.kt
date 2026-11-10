@@ -64,7 +64,7 @@ class RazrClockApp : Application() {
         }
         appScope.launch {
             handPresence.cue
-                .map { listOf(it.enabled, it.active, it.view, it.spin) }
+                .map { listOf(it.enabled, it.active, it.view, it.spin, it.flash) }
                 .distinctUntilChanged()
                 .collect { cover.render(face(secondClock.now.value)) }
         }
@@ -107,6 +107,7 @@ class RazrClockApp : Application() {
             handActive = gestures && hand.active,
             coverView = if (gestures) hand.view else CoverView.CLOCK,
             handSpin = if (gestures) hand.spin else 0,
+            gearLit = gestures && hand.flash,
         )
     }
 

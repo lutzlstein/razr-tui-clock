@@ -59,7 +59,17 @@ fun AppRoot(activity: MainActivity) {
     val weather by app.weather.current.collectAsState()
     val handFlow = remember(app) {
         app.handPresence.cue
-            .map { HandCue(it.enabled, it.active, it.view, it.spin, using = it.using, available = it.available) }
+            .map {
+                HandCue(
+                    enabled = it.enabled,
+                    active = it.active,
+                    view = it.view,
+                    spin = it.spin,
+                    flash = it.flash,
+                    using = it.using,
+                    available = it.available,
+                )
+            }
             .distinctUntilChanged()
     }
     val hand by handFlow.collectAsState(initial = HandCue())
@@ -94,6 +104,7 @@ fun AppRoot(activity: MainActivity) {
         handActive = prefs.handGestures && hand.enabled && hand.active,
         coverView = if (prefs.handGestures && hand.enabled) hand.view else CoverView.CLOCK,
         handSpin = if (prefs.handGestures && hand.enabled) hand.spin else 0,
+        gearLit = prefs.handGestures && hand.enabled && hand.flash,
     )
     SideEffect { activity.renderRear(clock) }
 

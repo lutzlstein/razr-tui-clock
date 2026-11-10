@@ -1,8 +1,5 @@
 package com.coryblische.razrclock.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -19,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -100,17 +96,6 @@ fun ClockScreen(
     var working by remember(calibrating) { mutableStateOf(state.preferences.lenses) }
     val lenses = if (calibrating) working else state.preferences.lenses
     val epoch = state.now.toEpochSecond(ZoneOffset.UTC)
-    val fast = RingMotion.fastDegrees(epoch)
-    val slow = RingMotion.slowDegrees(epoch)
-    // The approach spin is the only eased motion. 360° is 24 steps, so it
-    // finishes on the same lattice the second tick uses.
-    val burst = remember { Animatable(0f) }
-    LaunchedEffect(state.handSpin) {
-        if (state.handSpin == 0) return@LaunchedEffect
-        burst.snapTo(0f)
-        burst.animateTo(360f, tween(durationMillis = 640, easing = FastOutSlowInEasing))
-    }
-    val colors = ringColors(palette)
 
     CompositionLocalProvider(LocalPalette provides palette) {
     BoxWithConstraints(
@@ -133,8 +118,7 @@ fun ClockScreen(
                     }
                     val a = lenses.place(0, size.width, size.height)
                     val b = lenses.place(1, size.width, size.height)
-                    drawMazeRings(a, b, fast + burst.value, colors, emphasized = calibrating && selected == 0)
-                    drawMazeRings(b, a, slow + burst.value, colors, emphasized = calibrating && selected == 1)
+                    drawGearTrain(a, b, epoch, palette, lit = state.gearLit)
                     if (state.preferences.lensAlign) {
                         drawBlackLensGuides(a, b)
                     }
