@@ -16,12 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
 
 /** Screensaver fallback. Motorola Desk display is separate and will compete with this. */
 class RazrClockDream : DreamService() {
@@ -38,14 +35,10 @@ class RazrClockDream : DreamService() {
         app.postureMonitor.acquire()
         app.batteryMonitor.acquire()
         app.handPresence.acquire()
-        val face = mutableStateOf(app.face(LocalDateTime.now()))
+        val face = mutableStateOf(app.face(app.secondClock.now.value))
         tick = scope.launch {
-            while (isActive) {
-                val state = app.face(LocalDateTime.now())
-                face.value = state
-                val step = if (state.preferences.showSeconds) 1000L else 60_000L
-                val wait = step - (System.currentTimeMillis() % step)
-                delay(wait.coerceIn(200L, step))
+            app.secondClock.now.collect { tickNow ->
+                face.value = app.face(tickNow)
             }
         }
         val view = ComposeView(this).apply {

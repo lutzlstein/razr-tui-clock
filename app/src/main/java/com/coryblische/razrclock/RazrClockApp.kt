@@ -12,6 +12,7 @@ import com.coryblische.razrclock.presence.HandPresence
 import com.coryblische.razrclock.sys.SystemMonitor
 import com.coryblische.razrclock.theme.LoadedPalette
 import com.coryblische.razrclock.theme.loadPalette
+import com.coryblische.razrclock.ui.SecondClock
 import com.coryblische.razrclock.weather.WeatherRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,7 @@ class RazrClockApp : Application() {
         private set
     lateinit var handPresence: HandPresence
         private set
+    val secondClock: SecondClock = SecondClock()
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -54,16 +56,25 @@ class RazrClockApp : Application() {
         systemMonitor = SystemMonitor(this).also { it.start() }
         weather = WeatherRepository(this, settings).also { it.start() }
         handPresence = HandPresence(this)
+        secondClock.start()
         appScope.launch {
             settings.preferences.map { it.handGestures }.distinctUntilChanged().collect { enabled ->
                 handPresence.setEnabled(enabled)
             }
         }
         appScope.launch {
-            handPresence.cue.collect { cue ->
-                cover.render(face())
-                cover.applyBrightness(if (cue.enabled) cue.brightness else null)
-            }
+            handPresence.cue
+                .map { listOf(it.enabled, it.active, it.view, it.spin) }
+                .distinctUntilChanged()
+                .collect { cover.render(face(secondClock.now.value)) }
+        }
+        appScope.launch {
+            handPresence.cue
+                .map { it.enabled to it.brightness }
+                .distinctUntilChanged()
+                .collect { (enabled, level) ->
+                    cover.applyBrightness(if (enabled) level else null)
+                }
         }
     }
 

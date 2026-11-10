@@ -35,14 +35,16 @@ import com.coryblische.razrclock.display.applyDeskWindow
 import com.coryblische.razrclock.posture.PostureRules
 import com.coryblische.razrclock.posture.label
 import com.coryblische.razrclock.presence.CoverView
+import com.coryblische.razrclock.presence.HandCue
 import com.coryblische.razrclock.stand.StandModeService
 import com.coryblische.razrclock.theme.RazrTheme
 import com.coryblische.razrclock.wantsCalibration
 import com.coryblische.razrclock.wantsClock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
 
 @Composable
 fun AppRoot(activity: MainActivity) {
@@ -55,7 +57,12 @@ fun AppRoot(activity: MainActivity) {
     val rates by app.systemMonitor.rates.collectAsState()
     val ram by app.systemMonitor.ramPercent.collectAsState()
     val weather by app.weather.current.collectAsState()
-    val hand by app.handPresence.cue.collectAsState()
+    val handFlow = remember(app) {
+        app.handPresence.cue
+            .map { HandCue(it.enabled, it.active, it.view, it.spin, using = it.using, available = it.available) }
+            .distinctUntilChanged()
+    }
+    val hand by handFlow.collectAsState(initial = HandCue())
     val scope = rememberCoroutineScope()
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -64,14 +71,7 @@ fun AppRoot(activity: MainActivity) {
     }
     var lensWrite by remember { mutableStateOf<Job?>(null) }
 
-    var now by remember { mutableStateOf(LocalDateTime.now()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = LocalDateTime.now()
-            val wait = 1_000L - (System.currentTimeMillis() % 1_000L)
-            delay(wait.coerceIn(200L, 1_000L))
-        }
-    }
+    val now by app.secondClock.now.collectAsState()
 
     val standActive = PostureRules.shouldTakeOver(
         posture = posture.posture,

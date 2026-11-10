@@ -100,13 +100,15 @@ fun ClockScreen(
     var working by remember(calibrating) { mutableStateOf(state.preferences.lenses) }
     val lenses = if (calibrating) working else state.preferences.lenses
     val epoch = state.now.toEpochSecond(ZoneOffset.UTC)
-    val fast = rememberSteppedDegrees(epoch, periodSeconds = 1, degreesPerStep = 15f)
-    val slow = rememberSteppedDegrees(epoch, periodSeconds = 15, degreesPerStep = 12f)
+    val fast = RingMotion.fastDegrees(epoch)
+    val slow = RingMotion.slowDegrees(epoch)
+    // The approach spin is the only eased motion. 360° is 24 steps, so it
+    // finishes on the same lattice the second tick uses.
     val burst = remember { Animatable(0f) }
     LaunchedEffect(state.handSpin) {
         if (state.handSpin == 0) return@LaunchedEffect
         burst.snapTo(0f)
-        burst.animateTo(360f, tween(durationMillis = 680, easing = FastOutSlowInEasing))
+        burst.animateTo(360f, tween(durationMillis = 640, easing = FastOutSlowInEasing))
     }
     val colors = ringColors(palette)
 

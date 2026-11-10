@@ -104,13 +104,11 @@ class StandModeService : Service() {
                 val launched = display?.let { app.cover.launchOnDisplay(this@StandModeService, it).isSuccess } == true
                 if (!launched) raiseAlert()
             }
-            while (latched) {
-                val latest = app.face()
+            app.secondClock.now.collect { tick ->
+                if (!latched) return@collect
                 if (!app.rearSessionActive) {
-                    app.cover.ensurePresentation(this@StandModeService, latest)
+                    app.cover.ensurePresentation(this@StandModeService, app.face(tick))
                 }
-                val wait = 1_000L - (System.currentTimeMillis() % 1_000L)
-                delay(wait.coerceIn(200L, 1_000L))
             }
         }
     }
